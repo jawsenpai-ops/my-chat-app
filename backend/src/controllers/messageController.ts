@@ -1,7 +1,9 @@
+import { encryptText } from "../utils/crypto";
 import type { Response, NextFunction } from "express";
 import type { AuthRequest } from "../middleware/auth";
 import { db } from "../config/database";
 import type { RowDataPacket } from "mysql2";
+import { decryptText } from "../utils/crypto";
 
 export async function getMessages(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -38,7 +40,7 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
     const formattedMessages = rows.map((row) => ({
       _id: row._id,
       chat: row.chat,
-      text: row.text,
+      text: decryptText(row.text), // DB က ရလာတဲ့ Encrypted Text ကို Decrypt ပြန်လုပ်ပေးခြင်း
       createdAt: row.createdAt,
       sender: {
         _id: row.sender_id,
@@ -48,8 +50,8 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
       },
     }));
 
-    res.json(formattedMessages);
+    return res.json(formattedMessages);
   } catch (error) {
-    next(error);
+    return next(error);
   }
 }

@@ -3,6 +3,7 @@ import { Server as HttpServer } from "http";
 import jwt from "jsonwebtoken";
 import { db } from "../config/database";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
+import { encryptText } from "./crypto"; // 1. Encryption helper ကို Import လုပ်ပေးထားသည်
 
 export const onlineUsers: Map<string, string> = new Map();
 
@@ -61,9 +62,13 @@ export const initializeSocket = (httpServer: HttpServer) => {
           return;
         }
 
+        // 2. စာသားကို Encrypt လုပ်လိုက်သည်
+        const encryptedText = encryptText(text);
+
+        // 3. Encrypted Text ကို DB ထဲ သို့ သိမ်းဆည်းသည်
         const [msgResult] = await db.query<ResultSetHeader>(
           "INSERT INTO messages (chatId, senderId, text) VALUES (?, ?, ?)",
-          [chatId, userId, text]
+          [chatId, userId, encryptedText]
         );
 
         const messageId = msgResult.insertId;
@@ -78,6 +83,7 @@ export const initializeSocket = (httpServer: HttpServer) => {
           [userId]
         );
 
+        // 4. App/UI ဘက်ကိုတော့ မူရင်း Text (unencrypted) ပဲ ပြန်ပို့ပေးသည်
         const formattedMessage = {
           _id: messageId,
           chat: chatId,

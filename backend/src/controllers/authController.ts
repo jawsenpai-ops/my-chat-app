@@ -21,9 +21,12 @@ export async function register(req: Request, res: Response, next: NextFunction) 
       return res.status(400).json({ message: "User already exists" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // 1. Password ကို Salt 10 ဖြင့် Hash (Encrypt) လုပ်ခြင်း
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
     const avatar = `https://i.pravatar.cc/150?u=${encodeURIComponent(email)}`;
 
+    // 2. Hashed Password ကို Database ထဲ သို့ သိမ်းဆည်းခြင်း
     const [result] = await db.query<ResultSetHeader>(
       "INSERT INTO users (name, email, password, avatar) VALUES (?, ?, ?, ?)",
       [name, email, hashedPassword, avatar]
@@ -32,12 +35,12 @@ export async function register(req: Request, res: Response, next: NextFunction) 
     const userId = result.insertId;
     const token = jwt.sign({ userId }, process.env.JWT_SECRET || "secret", { expiresIn: "30d" });
 
-    res.status(201).json({
+    return res.status(201).json({
       token,
       user: { _id: userId, name, email, avatar },
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 }
 
@@ -58,6 +61,8 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     }
 
     const user = users[0];
+    
+    // 3. Encrypted Password ကို တိုက်စစ်ခြင်း
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
@@ -66,12 +71,12 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 
     const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET || "secret", { expiresIn: "30d" });
 
-    res.json({
+    return res.json({
       token,
       user: { _id: user.id, name: user.name, email: user.email, avatar: user.avatar },
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 }
 
@@ -87,8 +92,8 @@ export async function getMe(req: AuthRequest, res: Response, next: NextFunction)
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.json(users[0]);
+    return res.json(users[0]);
   } catch (error) {
-    next(error);
+    return next(error);
   }
 }

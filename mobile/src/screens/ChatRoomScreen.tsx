@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList, Message } from "../types";
 import { apiCall } from "../api/client";
@@ -13,9 +14,10 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const { user } = useAuth();
-  const socket = getSocket();
 
   useEffect(() => {
+    const socket = getSocket();
+
     const fetchMessages = async () => {
       try {
         const data = await apiCall<Message[]>(`/messages/chat/${chatId}`);
@@ -30,7 +32,16 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
 
     const handleNewMessage = (msg: Message) => {
       if (String(msg.chat) === String(chatId)) {
-        setMessages((prev) => [...prev, msg]);
+        setMessages((prev) => {
+          const isDuplicate = prev.some((m) => {
+            const mId = m._id || (m as any).id;
+            const msgId = msg._id || (msg as any).id;
+            if (mId && msgId) return String(mId) === String(msgId);
+            return m.text === msg.text && String(m.sender) === String(msg.sender);
+          });
+          if (isDuplicate) return prev;
+          return [...prev, msg];
+        });
       }
     };
 
@@ -45,6 +56,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
   const sendMessage = () => {
     if (!text.trim()) return;
 
+    const socket = getSocket();
     socket.emit("send-message", {
       chatId: String(chatId),
       text: text.trim(),
@@ -54,38 +66,48 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      <View style={styles.header}>
-        <Text style={styles.headerText}>{participant.name}</Text>
-      </View>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#fff" }} edges={["top", "bottom"]}>
+      <KeyboardAvoidingView 
+        style={{ flex: 1 }} 
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+      >
+        <View style={styles.header}>
+          <Text style={styles.headerText}>{participant.name}</Text>
+        </View>
 
-      <FlatList
-        data={messages}
-        keyExtractor={(item) => String(item._id)}
-        renderItem={({ item }) => {
-          const senderId = typeof item.sender === "object" ? item.sender?._id : item.sender;
-          const isMe = String(senderId) === String(user?._id);
+        <FlatList
+          data={messages}
+          keyExtractor={(item, index) => {
+            const id = item._id || (item as any).id;
+            return id ? `msg-${id}` : `msg-fallback-${index}-${item.text.slice(0, 5)}`;
+          }}
+          renderItem={({ item }) => {
+            const senderId = typeof item.sender === "object" ? (item.sender?._id || (item.sender as any)?.id) : item.sender;
+            const currentUserId = user?._id || (user as any)?.id;
+            const isMe = String(senderId) === String(currentUserId);
 
-          return (
-            <View style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}>
-              <Text style={isMe ? styles.myText : styles.otherText}>{item.text}</Text>
-            </View>
-          );
-        }}
-      />
-
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Type message..."
-          value={text}
-          onChangeText={setText}
+            return (
+              <View style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}>
+                <Text style={isMe ? styles.myText : styles.otherText}>{item.text}</Text>
+              </View>
+            );
+          }}
         />
-        <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
-          <Text style={{ color: "#fff" }}>Send</Text>
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Type message..."
+            value={text}
+            onChangeText={setText}
+          />
+          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
+            <Text style={{ color: "#fff" }}>Send</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 

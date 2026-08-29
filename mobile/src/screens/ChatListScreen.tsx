@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, FlatList, TouchableOpacity, Image, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList, Chat, User } from "../types";
 import { apiCall } from "../api/client";
@@ -21,7 +22,13 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         apiCall<User[]>("/users"),
       ]);
       setChats(chatData);
-      setUsers(userData);
+
+      const currentUserId = user?._id || (user as any)?.id;
+      const filteredUsers = userData.filter((u) => {
+        const uId = u._id || (u as any).id;
+        return String(uId) !== String(currentUserId);
+      });
+      setUsers(filteredUsers);
     } catch (err) {
       console.error(err);
     }
@@ -40,15 +47,17 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 
   const openChatWithUser = async (targetUser: User) => {
     try {
-      const chat = await apiCall<Chat>(`/chats/with/${targetUser._id}`, { method: "POST" });
-      navigation.navigate("ChatRoom", { chatId: chat._id, participant: targetUser });
+      const targetId = targetUser._id || (targetUser as any).id;
+      const chat = await apiCall<Chat>(`/chats/with/${targetId}`, { method: "POST" });
+      const chatId = chat._id || (chat as any).id;
+      navigation.navigate("ChatRoom", { chatId: chatId, participant: targetUser });
     } catch (err) {
       console.error(err);
     }
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <View style={styles.header}>
         <Text style={styles.headerText}>Chats ({user?.name})</Text>
         <TouchableOpacity onPress={logout}>
@@ -58,26 +67,35 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 
       <FlatList
         data={chats}
-        keyExtractor={(item) => String(item._id)}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.chatCard}
-            onPress={() => item.participant && navigation.navigate("ChatRoom", { chatId: item._id, participant: item.participant })}
-          >
-            <Image source={{ uri: item.participant?.avatar }} style={styles.avatar} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{item.participant?.name}</Text>
-              <Text style={styles.lastMsg} numberOfLines={1}>{item.lastMessage?.text || "No messages"}</Text>
-            </View>
-          </TouchableOpacity>
-        )}
+        keyExtractor={(item, index) => {
+          const key = item._id || (item as any).id;
+          return key ? `chat-${key}-${index}` : `chat-idx-${index}`;
+        }}
+        renderItem={({ item }) => {
+          const chatId = item._id || (item as any).id;
+          return (
+            <TouchableOpacity
+              style={styles.chatCard}
+              onPress={() => item.participant && navigation.navigate("ChatRoom", { chatId: chatId, participant: item.participant })}
+            >
+              <Image source={{ uri: item.participant?.avatar }} style={styles.avatar} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{item.participant?.name}</Text>
+                <Text style={styles.lastMsg} numberOfLines={1}>{item.lastMessage?.text || "No messages"}</Text>
+              </View>
+            </TouchableOpacity>
+          );
+        }}
       />
 
       <Text style={styles.sectionTitle}>Other Users</Text>
       <FlatList
         data={users}
         horizontal
-        keyExtractor={(item) => String(item._id)}
+        keyExtractor={(item, index) => {
+          const key = item._id || (item as any).id;
+          return key ? `user-${key}-${index}` : `user-idx-${index}`;
+        }}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.userCircle} onPress={() => openChatWithUser(item)}>
             <Image source={{ uri: item.avatar }} style={styles.avatar} />
@@ -85,13 +103,13 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
           </TouchableOpacity>
         )}
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", padding: 10 },
-  header: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 10, borderBottomWidth: 1, borderColor: "#eee" },
+  container: { flex: 1, backgroundColor: "#fff", paddingHorizontal: 10 },
+  header: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: 1, borderColor: "#eee" },
   headerText: { fontSize: 18, fontWeight: "bold" },
   logout: { color: "red" },
   chatCard: { flexDirection: "row", padding: 12, alignItems: "center", borderBottomWidth: 1, borderColor: "#f0f0f0" },
