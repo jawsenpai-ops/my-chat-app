@@ -16,8 +16,8 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleRegister = async () => {
     if (!name || !email || !password) return Alert.alert("Error", "Please fill all fields");
-    setLoading(true);
 
+    setLoading(true);
     try {
       const data = await apiCall<{ token: string; user: User }>("/auth/register", {
         method: "POST",
@@ -35,12 +35,14 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Register</Text>
+
       <TextInput
         placeholder="Full Name"
         value={name}
         onChangeText={setName}
         style={styles.input}
       />
+
       <TextInput
         placeholder="Email"
         value={email}
@@ -48,6 +50,7 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
         autoCapitalize="none"
         style={styles.input}
       />
+
       <TextInput
         placeholder="Password"
         value={password}
@@ -55,6 +58,7 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
         secureTextEntry
         style={styles.input}
       />
+
       <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
         <Text style={styles.btnText}>{loading ? "Creating..." : "Register"}</Text>
       </TouchableOpacity>

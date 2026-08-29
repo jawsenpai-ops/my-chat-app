@@ -6,7 +6,6 @@ import type { RowDataPacket, ResultSetHeader } from "mysql2";
 export async function getChats(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const userId = req.userId;
-
     const query = `
       SELECT 
         c.id AS _id,

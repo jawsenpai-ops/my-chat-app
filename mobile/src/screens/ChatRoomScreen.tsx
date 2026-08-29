@@ -17,22 +17,28 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
 
   useEffect(() => {
     const fetchMessages = async () => {
-      const data = await apiCall<Message[]>(`/messages/chat/${chatId}`);
-      setMessages(data);
+      try {
+        const data = await apiCall<Message[]>(`/messages/chat/${chatId}`);
+        setMessages(data);
+      } catch (err) {
+        console.error("Failed to fetch messages:", err);
+      }
     };
 
     fetchMessages();
     socket.emit("join-chat", String(chatId));
 
-    socket.on("new-message", (msg: Message) => {
+    const handleNewMessage = (msg: Message) => {
       if (String(msg.chat) === String(chatId)) {
         setMessages((prev) => [...prev, msg]);
       }
-    });
+    };
+
+    socket.on("new-message", handleNewMessage);
 
     return () => {
       socket.emit("leave-chat", String(chatId));
-      socket.off("new-message");
+      socket.off("new-message", handleNewMessage);
     };
   }, [chatId]);
 
@@ -41,7 +47,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
 
     socket.emit("send-message", {
       chatId: String(chatId),
-      text,
+      text: text.trim(),
     });
 
     setText("");
@@ -57,7 +63,9 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
         data={messages}
         keyExtractor={(item) => String(item._id)}
         renderItem={({ item }) => {
-          const isMe = String(item.sender._id || item.sender) === String(user?._id);
+          const senderId = typeof item.sender === "object" ? item.sender?._id : item.sender;
+          const isMe = String(senderId) === String(user?._id);
+
           return (
             <View style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}>
               <Text style={isMe ? styles.myText : styles.otherText}>{item.text}</Text>
@@ -86,7 +94,7 @@ const styles = StyleSheet.create({
   headerText: { fontSize: 16, fontWeight: "bold" },
   bubble: { padding: 10, borderRadius: 10, marginVertical: 4, marginHorizontal: 10, maxWidth: "75%" },
   myBubble: { alignSelf: "flex-end", backgroundColor: "#007bff" },
-  otherBubble: { alignSelf: "start", backgroundColor: "#e9ecef" },
+  otherBubble: { alignSelf: "flex-start", backgroundColor: "#e9ecef" },
   myText: { color: "#fff" },
   otherText: { color: "#000" },
   inputContainer: { flexDirection: "row", padding: 10, borderTopWidth: 1, borderColor: "#ccc", backgroundColor: "#fff" },

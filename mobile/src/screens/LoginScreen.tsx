@@ -15,8 +15,8 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleLogin = async () => {
     if (!email || !password) return Alert.alert("Error", "Please fill all fields");
-    setLoading(true);
 
+    setLoading(true);
     try {
       const data = await apiCall<{ token: string; user: User }>("/auth/login", {
         method: "POST",
@@ -34,6 +34,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Login</Text>
+
       <TextInput
         placeholder="Email"
         value={email}
@@ -41,6 +42,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
         autoCapitalize="none"
         style={styles.input}
       />
+
       <TextInput
         placeholder="Password"
         value={password}
@@ -48,6 +50,7 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
         secureTextEntry
         style={styles.input}
       />
+
       <TouchableOpacity style={styles.button} onPress={handleLogin} disabled={loading}>
         <Text style={styles.btnText}>{loading ? "Signing in..." : "Login"}</Text>
       </TouchableOpacity>

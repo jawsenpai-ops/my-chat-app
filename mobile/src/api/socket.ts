@@ -8,7 +8,7 @@ export const getSocket = (): Socket => {
   if (!socket) {
     socket = io(BASE_URL, {
       autoConnect: false,
-      transports: ["websocket"],
+      transports: ["websocket", "polling"],
     });
   }
   return socket;
@@ -17,7 +17,6 @@ export const getSocket = (): Socket => {
 export const connectSocket = async () => {
   const token = await AsyncStorage.getItem("jwt_token");
   const s = getSocket();
-
   if (token) {
     s.auth = { token };
     if (!s.connected) {

@@ -7,16 +7,11 @@ import type { RowDataPacket, ResultSetHeader } from "mysql2";
 export const onlineUsers: Map<string, string> = new Map();
 
 export const initializeSocket = (httpServer: HttpServer) => {
-  const allowedOrigins = [
-    "http://localhost:8081",
-    "http://localhost:5173",
-    process.env.FRONTEND_URL,
-  ].filter(Boolean) as string[];
-
   const io = new SocketServer(httpServer, { cors: { origin: "*" } });
 
   io.use(async (socket, next) => {
     const token = socket.handshake.auth.token;
+
     if (!token) return next(new Error("Authentication error"));
 
     try {
@@ -38,7 +33,6 @@ export const initializeSocket = (httpServer: HttpServer) => {
 
   io.on("connection", (socket) => {
     const userId = socket.data.userId;
-
     socket.emit("online-users", { userIds: Array.from(onlineUsers.keys()) });
     onlineUsers.set(userId, socket.id);
     socket.broadcast.emit("user-online", { userId });

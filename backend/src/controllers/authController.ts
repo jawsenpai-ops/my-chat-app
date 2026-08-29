@@ -8,7 +8,6 @@ import type { RowDataPacket, ResultSetHeader } from "mysql2";
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
     const { name, email, password } = req.body;
-
     if (!name || !email || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
@@ -45,7 +44,6 @@ export async function register(req: Request, res: Response, next: NextFunction) 
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
     const { email, password } = req.body;
-
     if (!email || !password) {
       return res.status(400).json({ message: "Email and password required" });
     }
@@ -80,7 +78,6 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 export async function getMe(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const userId = req.userId;
-
     const [users] = await db.query<RowDataPacket[]>(
       "SELECT id AS _id, name, email, avatar, createdAt FROM users WHERE id = ?",
       [userId]

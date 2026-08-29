@@ -29,7 +29,6 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 
   useEffect(() => {
     loadData();
-
     socket.on("new-message", () => {
       loadData();
     });
