@@ -95,7 +95,9 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
 
             return (
               <View style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}>
-                <Text style={isMe ? styles.myText : styles.otherText}>{item.displayText ?? item.text}</Text>
+                <Text style={isMe ? styles.myText : styles.otherText}>
+                  {item.displayText ?? item.text}
+                </Text>
               </View>
             );
           }}

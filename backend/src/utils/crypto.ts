@@ -1,14 +1,16 @@
 import crypto from "crypto";
+import dotenv from "dotenv";
+import path from "path";
+
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 const RAW_KEY = process.env.ENCRYPTION_KEY;
 
 if (!RAW_KEY || RAW_KEY.length < 32) {
-  throw new Error(
-    "Missing ENCRYPTION_KEY. Set a secure 32+ character key in CloudPanel environment variables."
-  );
+  throw new Error("ENCRYPTION_KEY is missing or too short. Set it in CloudPanel environment variables.");
 }
 
-const SECRET_KEY = crypto.createHash("sha256").update(RAW_KEY).digest();
+const SECRET_KEY = crypto.createHash("sha256").update(String(RAW_KEY)).digest();
 const ALGORITHM = "aes-256-cbc";
 
 export function encryptText(text: string): string {
@@ -34,8 +36,8 @@ export function decryptText(encryptedText: string): string {
 
     const [ivHex, encrypted] = encryptedText.split(":");
     const iv = Buffer.from(ivHex, "hex");
-    const decipher = crypto.createDecipheriv(ALGORITHM, SECRET_KEY, iv);
 
+    const decipher = crypto.createDecipheriv(ALGORITHM, SECRET_KEY, iv);
     let decrypted = decipher.update(encrypted, "hex", "utf8");
     decrypted += decipher.final("utf8");
 
