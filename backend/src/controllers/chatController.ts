@@ -2,7 +2,6 @@ import type { Response, NextFunction } from "express";
 import type { AuthRequest } from "../middleware/auth";
 import { db } from "../config/database";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
-import { decryptText } from "../utils/crypto";
 
 export async function getChats(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -40,16 +39,16 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
       },
       lastMessage: row.message_id ? {
         _id: row.message_id,
-        text: decryptText(row.message_text), // Last message ကို Decrypt ပြန်လုပ်ပေးခြင်း
+        text: row.message_text,
         createdAt: row.message_createdAt
       } : null,
       lastMessageAt: row.lastMessageAt,
       createdAt: row.createdAt,
     }));
 
-    return res.json(formattedChats);
+    res.json(formattedChats);
   } catch (error) {
-    return next(error);
+    next(error);
   }
 }
 
@@ -98,7 +97,7 @@ export async function getOrCreateChat(req: AuthRequest, res: Response, next: Nex
       [chatId]
     );
 
-    return res.json({
+    res.json({
       _id: chatRows[0]._id,
       participant: participantRows[0] || null,
       lastMessage: null,
@@ -106,6 +105,6 @@ export async function getOrCreateChat(req: AuthRequest, res: Response, next: Nex
       createdAt: chatRows[0].createdAt,
     });
   } catch (error) {
-    return next(error);
+    next(error);
   }
 }

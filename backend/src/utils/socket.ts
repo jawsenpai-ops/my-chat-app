@@ -3,7 +3,6 @@ import { Server as HttpServer } from "http";
 import jwt from "jsonwebtoken";
 import { db } from "../config/database";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
-import { encryptText } from "./crypto"; // 1. Encryption helper ကို Import လုပ်ပေးထားသည်
 
 export const onlineUsers: Map<string, string> = new Map();
 
@@ -62,11 +61,9 @@ export const initializeSocket = (httpServer: HttpServer) => {
           return;
         }
 
-        const encryptedText = encryptText(text);
-
         const [msgResult] = await db.query<ResultSetHeader>(
           "INSERT INTO messages (chatId, senderId, text) VALUES (?, ?, ?)",
-          [chatId, userId, encryptedText]
+          [chatId, userId, text]
         );
 
         const messageId = msgResult.insertId;
@@ -84,8 +81,7 @@ export const initializeSocket = (httpServer: HttpServer) => {
         const formattedMessage = {
           _id: messageId,
           chat: chatId,
-          text: encryptedText,
-          displayText: text,
+          text,
           sender: sender[0],
           createdAt: new Date().toISOString(),
         };
