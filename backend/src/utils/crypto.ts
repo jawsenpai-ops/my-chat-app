@@ -2,12 +2,14 @@ import crypto from "crypto";
 import dotenv from "dotenv";
 import path from "path";
 
-dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 const RAW_KEY = process.env.ENCRYPTION_KEY;
 
 if (!RAW_KEY || RAW_KEY.length < 32) {
-  throw new Error("ENCRYPTION_KEY is missing or too short. Set it in CloudPanel environment variables.");
+  throw new Error(
+    "ENCRYPTION_KEY is missing or too short. Set it in CloudPanel environment variables."
+  );
 }
 
 const SECRET_KEY = crypto.createHash("sha256").update(String(RAW_KEY)).digest();
