@@ -9,6 +9,7 @@ export interface Message {
   _id: number | string;
   chat: number | string;
   text: string;
+  displayText?: string;
   createdAt: string;
   sender: {
     _id: number | string;

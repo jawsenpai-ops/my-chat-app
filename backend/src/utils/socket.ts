@@ -62,10 +62,8 @@ export const initializeSocket = (httpServer: HttpServer) => {
           return;
         }
 
-        // 2. စာသားကို Encrypt လုပ်လိုက်သည်
         const encryptedText = encryptText(text);
 
-        // 3. Encrypted Text ကို DB ထဲ သို့ သိမ်းဆည်းသည်
         const [msgResult] = await db.query<ResultSetHeader>(
           "INSERT INTO messages (chatId, senderId, text) VALUES (?, ?, ?)",
           [chatId, userId, encryptedText]
@@ -83,11 +81,11 @@ export const initializeSocket = (httpServer: HttpServer) => {
           [userId]
         );
 
-        // 4. App/UI ဘက်ကိုတော့ မူရင်း Text (unencrypted) ပဲ ပြန်ပို့ပေးသည်
         const formattedMessage = {
           _id: messageId,
           chat: chatId,
-          text,
+          text: encryptedText,
+          displayText: text,
           sender: sender[0],
           createdAt: new Date().toISOString(),
         };

@@ -33,12 +33,18 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
     const handleNewMessage = (msg: Message) => {
       if (String(msg.chat) === String(chatId)) {
         setMessages((prev) => {
+          const msgDisplay = msg.displayText ?? msg.text;
+
           const isDuplicate = prev.some((m) => {
             const mId = m._id || (m as any).id;
             const msgId = msg._id || (msg as any).id;
+            const mDisplay = m.displayText ?? m.text;
+            const msgDisplayText = msg.displayText ?? msg.text;
+
             if (mId && msgId) return String(mId) === String(msgId);
-            return m.text === msg.text && String(m.sender) === String(msg.sender);
+            return mDisplay === msgDisplayText && String(m.sender) === String(msg.sender);
           });
+
           if (isDuplicate) return prev;
           return [...prev, msg];
         });
@@ -89,7 +95,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
 
             return (
               <View style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}>
-                <Text style={isMe ? styles.myText : styles.otherText}>{item.text}</Text>
+                <Text style={isMe ? styles.myText : styles.otherText}>{item.displayText ?? item.text}</Text>
               </View>
             );
           }}
