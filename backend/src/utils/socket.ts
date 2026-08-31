@@ -3,6 +3,7 @@ import { Server as HttpServer } from "http";
 import jwt from "jsonwebtoken";
 import { db } from "../config/database";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
+import { encryptText } from "./crypto"; // 👈 ၁။ encryptText Import ထည့်ထားပါသည်
 
 export const onlineUsers: Map<string, string> = new Map();
 
@@ -61,15 +62,18 @@ export const initializeSocket = (httpServer: HttpServer) => {
           return;
         }
 
+        // 👈 ၂။ DB ထဲ မသိမ်းမီ Plain text ကို Encrypt လုပ်ပါသည်
+        const encryptedText = encryptText(text);
+
         const [msgResult] = await db.query<ResultSetHeader>(
           "INSERT INTO messages (chatId, senderId, text) VALUES (?, ?, ?)",
-          [chatId, userId, text]
+          [chatId, userId, encryptedText] // 👈 Encrypted text ကို DB ထဲ သို့ ထည့်သည်
         );
 
         const messageId = msgResult.insertId;
 
         await db.query(
-          "UPDATE chats SET lastMessageId = ?, lastMessageAt = NOW() WHERE id = ?",
+          "UPDATE chats SET lastMessageAt = NOW(), lastMessageId = ? WHERE id = ?",
           [messageId, chatId]
         );
 
@@ -78,10 +82,11 @@ export const initializeSocket = (httpServer: HttpServer) => {
           [userId]
         );
 
+        // 👈 ၃။ Socket မှတစ်ဆင့် Mobile App များကို ပို့သည့်အခါ Screen ပေါ်ချက်ချင်းပေါ်စေရန် Plain text တိုင်း ပို့ပေးပါသည်
         const formattedMessage = {
           _id: messageId,
           chat: chatId,
-          text,
+          text: text, 
           sender: sender[0],
           createdAt: new Date().toISOString(),
         };
