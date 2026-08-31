@@ -8,6 +8,7 @@ import { ChatListScreen } from "./src/screens/ChatListScreen";
 import { ChatRoomScreen } from "./src/screens/ChatRoomScreen";
 import { RootStackParamList } from "./src/types";
 import { ActivityIndicator, View } from "react-native";
+import { AppColors } from "./src/theme/colors";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -16,8 +17,8 @@ const AppNavigator = () => {
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color="#007bff" />
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: AppColors.background }}>
+        <ActivityIndicator size="large" color={AppColors.primaryDark} />
       </View>
     );
   }

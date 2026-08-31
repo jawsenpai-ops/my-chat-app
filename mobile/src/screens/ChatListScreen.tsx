@@ -6,13 +6,14 @@ import { RootStackParamList, Chat, User } from "../types";
 import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { getSocket } from "../api/socket";
+import { AppColors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ChatList">;
 
 export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const [chats, setChats] = useState<Chat[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [activeTab, setActiveTab] = useState<"chat" | "profile">("chat"); // 👈 Active Tab State
+  const [activeTab, setActiveTab] = useState<"chat" | "profile">("chat");
   const { logout, user } = useAuth();
   const socket = getSocket();
 
@@ -67,6 +68,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
       </View>
 
       <FlatList
+        contentContainerStyle={styles.listContent}
         data={chats}
         keyExtractor={(item, index) => {
           const key = item._id || (item as any).id;
@@ -91,8 +93,9 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 
       <Text style={styles.sectionTitle}>Other Users</Text>
       <FlatList
-        data={users}
         horizontal
+        showsHorizontalScrollIndicator={false}
+        data={users}
         keyExtractor={(item, index) => {
           const key = item._id || (item as any).id;
           return key ? `user-${key}-${index}` : `user-idx-${index}`;
@@ -100,31 +103,26 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.userCircle} onPress={() => openChatWithUser(item)}>
             <Image source={{ uri: item.avatar }} style={styles.avatar} />
-            <Text style={{ fontSize: 10 }}>{item.name}</Text>
+            <Text style={styles.userName}>{item.name}</Text>
           </TouchableOpacity>
         )}
       />
 
-      {/* 👈 ထောက်ပြထားသည့် Bottom Navigation Bar (chat | profile) */}
       <View style={styles.bottomTabBar}>
-        <TouchableOpacity 
-          style={styles.tabButton} 
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === "chat" && styles.tabButtonActive]}
           onPress={() => setActiveTab("chat")}
         >
-          <Text style={[styles.tabText, activeTab === "chat" && styles.activeTabText]}>
-            chat
-          </Text>
+          <Text style={[styles.tabText, activeTab === "chat" && styles.activeTabText]}>chat</Text>
         </TouchableOpacity>
 
         <View style={styles.tabDivider} />
 
-        <TouchableOpacity 
-          style={styles.tabButton} 
+        <TouchableOpacity
+          style={[styles.tabButton, activeTab === "profile" && styles.tabButtonActive]}
           onPress={() => setActiveTab("profile")}
         >
-          <Text style={[styles.tabText, activeTab === "profile" && styles.activeTabText]}>
-            profile
-          </Text>
+          <Text style={[styles.tabText, activeTab === "profile" && styles.activeTabText]}>profile</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -132,44 +130,97 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", paddingHorizontal: 10 },
-  header: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 12, borderBottomWidth: 1, borderColor: "#eee" },
-  headerText: { fontSize: 18, fontWeight: "bold" },
-  logout: { color: "red" },
-  chatCard: { flexDirection: "row", padding: 12, alignItems: "center", borderBottomWidth: 1, borderColor: "#f0f0f0" },
-  avatar: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
-  name: { fontWeight: "bold" },
-  lastMsg: { color: "#666", fontSize: 12 },
-  sectionTitle: { fontWeight: "bold", marginVertical: 10 },
-  userCircle: { alignItems: "center", marginRight: 15 },
-
-  // Bottom Navigation Bar Styles
+  container: {
+    flex: 1,
+    backgroundColor: AppColors.background,
+    paddingHorizontal: 12,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+    borderBottomWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  headerText: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: AppColors.primaryDark,
+  },
+  logout: {
+    color: AppColors.primaryDark,
+    fontWeight: "600",
+  },
+  listContent: {
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
+  chatCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    marginBottom: 8,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  avatar: { width: 42, height: 42, borderRadius: 21, marginRight: 10 },
+  name: { fontWeight: "700", color: AppColors.primaryDark, fontSize: 15 },
+  lastMsg: { color: AppColors.textMuted, fontSize: 12, marginTop: 4 },
+  sectionTitle: { fontWeight: "700", color: AppColors.primaryDark, marginVertical: 12, marginLeft: 8 },
+  userCircle: {
+    alignItems: "center",
+    marginRight: 12,
+    padding: 8,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+  },
+  userName: {
+    color: AppColors.primaryDark,
+    fontSize: 10,
+    marginTop: 4,
+    fontWeight: "600",
+  },
   bottomTabBar: {
     flexDirection: "row",
-    height: 60,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
+    height: 62,
     alignItems: "center",
     justifyContent: "space-around",
-    backgroundColor: "#fff",
-    marginTop: 10,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.2)",
+    borderRadius: 18,
+    marginTop: 12,
+    marginBottom: 8,
+    overflow: "hidden",
   },
   tabButton: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
+    height: "100%",
+  },
+  tabButtonActive: {
+    backgroundColor: AppColors.primaryDark,
   },
   tabDivider: {
     width: 1,
     height: "60%",
-    backgroundColor: "#ccc",
+    backgroundColor: "rgba(255,255,255,0.3)",
   },
   tabText: {
-    fontSize: 22,
-    color: "#6b21a8",
-    fontWeight: "400",
+    fontSize: 18,
+    color: AppColors.primaryDark,
+    fontWeight: "500",
+    textTransform: "lowercase",
   },
   activeTabText: {
-    fontWeight: "bold",
+    color: AppColors.white,
+    fontWeight: "700",
   },
 });
