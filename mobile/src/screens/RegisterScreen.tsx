@@ -4,7 +4,8 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList, User } from "../types";
 import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import { AppColors, AppShadow } from "../theme/colors";
+import { useTheme } from "../context/ThemeContext";
+import { SettingsButton } from "../components/SettingsButton";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Register">;
 
@@ -15,6 +16,7 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const { theme } = useTheme();
 
   const handleRegister = async () => {
     if (!name || !email || !password) return Alert.alert("Error", "Please fill all fields");
@@ -35,41 +37,43 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.card}>
-        <View style={styles.logoBox}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <SettingsButton />
+
+      <View style={[styles.card, { backgroundColor: theme.panel, borderColor: theme.panelBorder }]}>
+        <View style={[styles.logoBox, { backgroundColor: theme.buttonInner }]}>
           <Text style={styles.logoText}>L</Text>
         </View>
 
-        <Text style={styles.title}>Create Account</Text>
-        <Text style={styles.subtitle}>Sign up to start messaging</Text>
+        <Text style={[styles.title, { color: theme.text }]}>Create Account</Text>
+        <Text style={[styles.subtitle, { color: theme.textMuted }]}>Sign up to start messaging</Text>
 
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Full Name</Text>
+          <Text style={[styles.label, { color: theme.text }]}>Full Name</Text>
           <TextInput
             placeholder="Enter your full name"
             value={name}
             onChangeText={setName}
-            placeholderTextColor={AppColors.placeholder}
-            style={styles.input}
+            placeholderTextColor={theme.inputPlaceholder}
+            style={[styles.input, { backgroundColor: theme.input, color: theme.text }]}
           />
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Email</Text>
+          <Text style={[styles.label, { color: theme.text }]}>Email</Text>
           <TextInput
             placeholder="Enter your email"
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
             autoComplete="email"
-            placeholderTextColor={AppColors.placeholder}
-            style={styles.input}
+            placeholderTextColor={theme.inputPlaceholder}
+            style={[styles.input, { backgroundColor: theme.input, color: theme.text }]}
           />
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Password</Text>
+          <Text style={[styles.label, { color: theme.text }]}>Password</Text>
           <View style={styles.passwordWrap}>
             <TextInput
               placeholder="Enter your password"
@@ -77,23 +81,23 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
               autoComplete="current-password"
-              placeholderTextColor={AppColors.placeholder}
-              style={styles.inputWithButton}
+              placeholderTextColor={theme.inputPlaceholder}
+              style={[styles.inputWithButton, { backgroundColor: theme.input, color: theme.text }]}
             />
             <TouchableOpacity style={styles.showPassword} onPress={() => setShowPassword((prev) => !prev)}>
-              <Text style={styles.showPasswordText}>{showPassword ? "Hide" : "Show"}</Text>
+              <Text style={[styles.showPasswordText, { color: theme.textMuted }]}>{showPassword ? "Hide" : "Show"}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
-          <Text style={styles.btnText}>{loading ? "Creating..." : "Register"}</Text>
+        <TouchableOpacity style={[styles.button, { backgroundColor: theme.buttonInner }]} onPress={handleRegister} disabled={loading}>
+          <Text style={[styles.btnText, { color: theme.buttonText }]}>{loading ? "Creating..." : "Register"}</Text>
         </TouchableOpacity>
 
         <View style={styles.signupRow}>
-          <Text style={styles.signupText}>Already have an account? </Text>
+          <Text style={[styles.signupText, { color: theme.textMuted }]}>Already have an account? </Text>
           <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-            <Text style={styles.signupLink}>Login</Text>
+            <Text style={[styles.signupLink, { color: theme.text }]}>Login</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -106,49 +110,48 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 20,
-    backgroundColor: AppColors.background,
+    padding: 0,
   },
   card: {
     width: "100%",
     maxWidth: 420,
     padding: 40,
-    backgroundColor: AppColors.card,
     borderWidth: 1,
-    borderColor: AppColors.cardBorder,
     borderRadius: 24,
-    ...AppShadow.soft,
+    marginHorizontal: 0,
+    shadowColor: "#263A47",
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.2,
+    shadowRadius: 28,
+    elevation: 6,
   },
   logoBox: {
     width: 65,
     height: 65,
     marginBottom: 20,
     borderRadius: 18,
-    backgroundColor: AppColors.primaryDark,
     alignSelf: "center",
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: AppColors.primaryDark,
+    shadowColor: "#263A47",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.25,
     shadowRadius: 16,
     elevation: 6,
   },
   logoText: {
-    color: AppColors.white,
+    color: "#FFFFFF",
     fontSize: 28,
     fontWeight: "700",
   },
   title: {
     textAlign: "center",
-    color: AppColors.text,
     fontSize: 30,
     fontWeight: "700",
     marginBottom: 8,
   },
   subtitle: {
     textAlign: "center",
-    color: AppColors.textMuted,
     fontSize: 14,
     marginBottom: 30,
   },
@@ -157,7 +160,6 @@ const styles = StyleSheet.create({
   },
   label: {
     marginBottom: 8,
-    color: AppColors.text,
     fontSize: 14,
     fontWeight: "600",
   },
@@ -166,8 +168,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: AppColors.whiteSoft,
-    color: AppColors.inputText,
     fontSize: 15,
     borderWidth: 2,
     borderColor: "transparent",
@@ -182,8 +182,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingRight: 70,
     borderRadius: 12,
-    backgroundColor: AppColors.whiteSoft,
-    color: AppColors.inputText,
     fontSize: 15,
     borderWidth: 2,
     borderColor: "transparent",
@@ -197,7 +195,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   showPasswordText: {
-    color: AppColors.primaryMid,
     fontSize: 13,
     fontWeight: "600",
   },
@@ -205,16 +202,14 @@ const styles = StyleSheet.create({
     width: "100%",
     paddingVertical: 15,
     borderRadius: 12,
-    backgroundColor: AppColors.primaryDark,
     alignItems: "center",
-    shadowColor: AppColors.primaryDark,
+    shadowColor: "#263A47",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.24,
     shadowRadius: 16,
     elevation: 5,
   },
   btnText: {
-    color: AppColors.white,
     fontSize: 16,
     fontWeight: "700",
   },
@@ -225,11 +220,9 @@ const styles = StyleSheet.create({
     marginTop: 25,
   },
   signupText: {
-    color: AppColors.textMuted,
     fontSize: 14,
   },
   signupLink: {
-    color: AppColors.primaryDark,
     fontWeight: "700",
     fontSize: 14,
   },

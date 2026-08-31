@@ -2,23 +2,24 @@ import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
+import { ThemeProvider, useTheme } from "./src/context/ThemeContext";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { RegisterScreen } from "./src/screens/RegisterScreen";
 import { ChatListScreen } from "./src/screens/ChatListScreen";
 import { ChatRoomScreen } from "./src/screens/ChatRoomScreen";
 import { RootStackParamList } from "./src/types";
 import { ActivityIndicator, View } from "react-native";
-import { AppColors } from "./src/theme/colors";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const AppNavigator = () => {
   const { user, loading } = useAuth();
+  const { theme } = useTheme();
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: AppColors.background }}>
-        <ActivityIndicator size="large" color={AppColors.primaryDark} />
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: theme.background }}>
+        <ActivityIndicator size="large" color={theme.text} />
       </View>
     );
   }
@@ -43,9 +44,11 @@ const AppNavigator = () => {
 export default function App() {
   return (
     <AuthProvider>
-      <NavigationContainer>
-        <AppNavigator />
-      </NavigationContainer>
+      <ThemeProvider>
+        <NavigationContainer>
+          <AppNavigator />
+        </NavigationContainer>
+      </ThemeProvider>
     </AuthProvider>
   );
 }
