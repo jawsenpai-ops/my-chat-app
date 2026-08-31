@@ -12,6 +12,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "ChatList">;
 export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const [chats, setChats] = useState<Chat[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [activeTab, setActiveTab] = useState<"chat" | "profile">("chat"); // 👈 Active Tab State
   const { logout, user } = useAuth();
   const socket = getSocket();
 
@@ -103,6 +104,29 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
           </TouchableOpacity>
         )}
       />
+
+      {/* 👈 ထောက်ပြထားသည့် Bottom Navigation Bar (chat | profile) */}
+      <View style={styles.bottomTabBar}>
+        <TouchableOpacity 
+          style={styles.tabButton} 
+          onPress={() => setActiveTab("chat")}
+        >
+          <Text style={[styles.tabText, activeTab === "chat" && styles.activeTabText]}>
+            chat
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.tabDivider} />
+
+        <TouchableOpacity 
+          style={styles.tabButton} 
+          onPress={() => setActiveTab("profile")}
+        >
+          <Text style={[styles.tabText, activeTab === "profile" && styles.activeTabText]}>
+            profile
+          </Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 };
@@ -118,4 +142,34 @@ const styles = StyleSheet.create({
   lastMsg: { color: "#666", fontSize: 12 },
   sectionTitle: { fontWeight: "bold", marginVertical: 10 },
   userCircle: { alignItems: "center", marginRight: 15 },
+
+  // Bottom Navigation Bar Styles
+  bottomTabBar: {
+    flexDirection: "row",
+    height: 60,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+    alignItems: "center",
+    justifyContent: "space-around",
+    backgroundColor: "#fff",
+    marginTop: 10,
+  },
+  tabButton: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabDivider: {
+    width: 1,
+    height: "60%",
+    backgroundColor: "#ccc",
+  },
+  tabText: {
+    fontSize: 22,
+    color: "#6b21a8",
+    fontWeight: "400",
+  },
+  activeTabText: {
+    fontWeight: "bold",
+  },
 });

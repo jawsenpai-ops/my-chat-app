@@ -2,6 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthRequest } from "../middleware/auth";
 import { db } from "../config/database";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
+import { decryptText } from "../utils/crypto"; // 👈 decryptText ကို Import ထည့်ထားသည်
 
 export async function getChats(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -39,7 +40,7 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
       },
       lastMessage: row.message_id ? {
         _id: row.message_id,
-        text: row.message_text,
+        text: row.message_text ? decryptText(row.message_text) : "", // 👈 Decrypt လုပ်လိုက်သည်
         createdAt: row.message_createdAt
       } : null,
       lastMessageAt: row.lastMessageAt,
