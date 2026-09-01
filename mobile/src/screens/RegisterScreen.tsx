@@ -11,20 +11,19 @@ type Props = NativeStackScreenProps<RootStackParamList, "Register">;
 export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
 
   const handleRegister = async () => {
-    if (!name || !email || !phone || !password) return Alert.alert("Error", "Please fill all fields");
+    if (!name || !email || !password) return Alert.alert("Error", "Please fill all fields");
 
     setLoading(true);
     try {
       const data = await apiCall<{ token: string; user: User }>("/auth/register", {
         method: "POST",
-        body: JSON.stringify({ name, email, phone, password }),
+        body: JSON.stringify({ name, email, password }),
       });
 
       await login(data.token, data.user);
@@ -40,19 +39,6 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
       <View style={styles.card}>
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>Sign up to start messaging</Text>
-
-        <View style={styles.fieldGroup}>
-          <Text style={styles.label}>Phone Number</Text>
-          <TextInput
-            placeholder="Enter your phone number"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            autoComplete="tel"
-            placeholderTextColor={AppColors.placeholder}
-            style={styles.input}
-          />
-        </View>
 
         <View style={styles.fieldGroup}>
           <Text style={styles.label}>Full Name</Text>

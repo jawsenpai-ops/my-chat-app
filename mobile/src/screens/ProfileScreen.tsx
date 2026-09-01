@@ -81,10 +81,6 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
         <View style={styles.accountSection}>
           <Text style={styles.sectionLabel}>ACCOUNT INFORMATION</Text>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Phone number</Text>
-            <Text style={styles.infoValue}>{profile?.phone || "Not provided"}</Text>
-          </View>
-          <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Joined</Text>
             <Text style={styles.infoValue}>{joinedDate}</Text>
           </View>

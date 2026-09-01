@@ -19,10 +19,17 @@ export async function apiCall<T>(endpoint: string, options: RequestInit = {}): P
     headers,
   });
 
-  const data = await response.json();
+  const responseText = await response.text();
+  let data: { message?: string } | T;
+
+  try {
+    data = responseText ? JSON.parse(responseText) : {};
+  } catch {
+    throw new Error(`Server returned an invalid response (${response.status})`);
+  }
 
   if (!response.ok) {
-    throw new Error(data.message || "Network error");
+    throw new Error((data as { message?: string }).message || "Network error");
   }
 
   return data as T;

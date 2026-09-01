@@ -18,6 +18,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/chats", chatRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/users", userRoutes);
+app.use((_req, res) => {
+  res.status(404).json({ message: "Route not found" });
+});
 app.use(errorHandler);
 
 export default app;

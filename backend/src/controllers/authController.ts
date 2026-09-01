@@ -7,8 +7,8 @@ import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
-    const { name, email, password, phone } = req.body;
-    if (!name || !email || !password || !phone) {
+    const { name, email, password } = req.body;
+    if (!name || !email || !password) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
@@ -29,7 +29,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
     // 2. Hashed Password ကို Database ထဲ သို့ သိမ်းဆည်းခြင်း
     const [result] = await db.query<ResultSetHeader>(
       "INSERT INTO users (name, email, password, phone, avatar) VALUES (?, ?, ?, ?, ?)",
-      [name, email, hashedPassword, phone, avatar]
+      [name, email, hashedPassword, "", avatar]
     );
 
     const userId = result.insertId;
@@ -37,7 +37,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
 
     return res.status(201).json({
       token,
-      user: { _id: userId, name, email, phone, avatar, bio: "" },
+      user: { _id: userId, name, email, avatar, bio: "" },
     });
   } catch (error) {
     return next(error);
