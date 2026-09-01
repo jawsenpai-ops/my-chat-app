@@ -130,9 +130,8 @@ const styles = StyleSheet.create({
   },
   header: {
     padding: 15,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderBottomWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(20,42,68,0.05)",
+    borderBottomWidth: 0,
   },
   headerText: {
     fontSize: 16,
@@ -151,11 +150,11 @@ const styles = StyleSheet.create({
   },
   myBubble: {
     alignSelf: "flex-end",
-    backgroundColor: AppColors.primaryDark,
+    backgroundColor: AppColors.buttonInner,
   },
   otherBubble: {
     alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.7)",
+    backgroundColor: "rgba(255,255,255,0.8)",
   },
   myText: {
     color: AppColors.white,
@@ -166,14 +165,12 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: "row",
     padding: 12,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.2)",
-    backgroundColor: "rgba(255,255,255,0.15)",
+    borderTopWidth: 0,
+    backgroundColor: "rgba(20,42,68,0.05)",
   },
   input: {
     flex: 1,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.25)",
+    borderWidth: 0,
     backgroundColor: AppColors.whiteSoft,
     borderRadius: 20,
     paddingHorizontal: 15,
@@ -182,12 +179,12 @@ const styles = StyleSheet.create({
   },
   sendBtn: {
     marginLeft: 10,
-    backgroundColor: AppColors.primaryDark,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 18,
     borderRadius: 20,
     minWidth: 70,
+    backgroundColor: AppColors.buttonOuter,
   },
   sendText: {
     color: AppColors.white,

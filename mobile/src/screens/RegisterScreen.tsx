@@ -4,28 +4,27 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList, User } from "../types";
 import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import { useTheme } from "../context/ThemeContext";
-import { SettingsButton } from "../components/SettingsButton";
+import { AppColors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Register">;
 
 export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
-  const { theme } = useTheme();
 
   const handleRegister = async () => {
-    if (!name || !email || !password) return Alert.alert("Error", "Please fill all fields");
+    if (!name || !email || !phone || !password) return Alert.alert("Error", "Please fill all fields");
 
     setLoading(true);
     try {
       const data = await apiCall<{ token: string; user: User }>("/auth/register", {
         method: "POST",
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name, email, phone, password }),
       });
 
       await login(data.token, data.user);
@@ -37,43 +36,50 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <SettingsButton />
-
-      <View style={[styles.card, { backgroundColor: theme.panel, borderColor: theme.panelBorder }]}>
-        <View style={[styles.logoBox, { backgroundColor: theme.buttonInner }]}>
-          <Text style={styles.logoText}>L</Text>
-        </View>
-
-        <Text style={[styles.title, { color: theme.text }]}>Create Account</Text>
-        <Text style={[styles.subtitle, { color: theme.textMuted }]}>Sign up to start messaging</Text>
+    <View style={styles.container}>
+      <View style={styles.card}>
+        <Text style={styles.title}>Create Account</Text>
+        <Text style={styles.subtitle}>Sign up to start messaging</Text>
 
         <View style={styles.fieldGroup}>
-          <Text style={[styles.label, { color: theme.text }]}>Full Name</Text>
+          <Text style={styles.label}>Phone Number</Text>
           <TextInput
-            placeholder="Enter your full name"
-            value={name}
-            onChangeText={setName}
-            placeholderTextColor={theme.inputPlaceholder}
-            style={[styles.input, { backgroundColor: theme.input, color: theme.text }]}
+            placeholder="Enter your phone number"
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+            autoComplete="tel"
+            placeholderTextColor={AppColors.placeholder}
+            style={styles.input}
           />
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={[styles.label, { color: theme.text }]}>Email</Text>
+          <Text style={styles.label}>Full Name</Text>
+          <TextInput
+            placeholder="Enter your full name"
+            value={name}
+            onChangeText={setName}
+            placeholderTextColor={AppColors.placeholder}
+            style={styles.input}
+          />
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <Text style={styles.label}>Email</Text>
           <TextInput
             placeholder="Enter your email"
             value={email}
             onChangeText={setEmail}
             autoCapitalize="none"
             autoComplete="email"
-            placeholderTextColor={theme.inputPlaceholder}
-            style={[styles.input, { backgroundColor: theme.input, color: theme.text }]}
+            placeholderTextColor={AppColors.placeholder}
+            style={styles.input}
           />
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={[styles.label, { color: theme.text }]}>Password</Text>
+          <Text style={styles.label}>Password</Text>
           <View style={styles.passwordWrap}>
             <TextInput
               placeholder="Enter your password"
@@ -81,23 +87,23 @@ export const RegisterScreen: React.FC<Props> = ({ navigation }) => {
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
               autoComplete="current-password"
-              placeholderTextColor={theme.inputPlaceholder}
-              style={[styles.inputWithButton, { backgroundColor: theme.input, color: theme.text }]}
+              placeholderTextColor={AppColors.placeholder}
+              style={styles.inputWithButton}
             />
             <TouchableOpacity style={styles.showPassword} onPress={() => setShowPassword((prev) => !prev)}>
-              <Text style={[styles.showPasswordText, { color: theme.textMuted }]}>{showPassword ? "Hide" : "Show"}</Text>
+              <Text style={styles.showPasswordText}>{showPassword ? "Hide" : "Show"}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
-        <TouchableOpacity style={[styles.button, { backgroundColor: theme.buttonInner }]} onPress={handleRegister} disabled={loading}>
-          <Text style={[styles.btnText, { color: theme.buttonText }]}>{loading ? "Creating..." : "Register"}</Text>
+        <TouchableOpacity style={styles.button} onPress={handleRegister} disabled={loading}>
+          <Text style={styles.btnText}>{loading ? "Creating..." : "Register"}</Text>
         </TouchableOpacity>
 
         <View style={styles.signupRow}>
-          <Text style={[styles.signupText, { color: theme.textMuted }]}>Already have an account? </Text>
+          <Text style={styles.signupText}>Already have an account? </Text>
           <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-            <Text style={[styles.signupLink, { color: theme.text }]}>Login</Text>
+            <Text style={styles.signupLink}>Login</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -111,47 +117,26 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 0,
+    backgroundColor: AppColors.background,
   },
   card: {
     width: "100%",
     maxWidth: 420,
-    padding: 40,
-    borderWidth: 1,
+    padding: 38,
+    backgroundColor: "rgba(20,42,68,0.06)",
     borderRadius: 24,
-    marginHorizontal: 0,
-    shadowColor: "#263A47",
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.2,
-    shadowRadius: 28,
-    elevation: 6,
-  },
-  logoBox: {
-    width: 65,
-    height: 65,
-    marginBottom: 20,
-    borderRadius: 18,
-    alignSelf: "center",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#263A47",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 6,
-  },
-  logoText: {
-    color: "#FFFFFF",
-    fontSize: 28,
-    fontWeight: "700",
+    borderWidth: 0,
   },
   title: {
     textAlign: "center",
+    color: AppColors.text,
     fontSize: 30,
     fontWeight: "700",
     marginBottom: 8,
   },
   subtitle: {
     textAlign: "center",
+    color: AppColors.textMuted,
     fontSize: 14,
     marginBottom: 30,
   },
@@ -160,6 +145,7 @@ const styles = StyleSheet.create({
   },
   label: {
     marginBottom: 8,
+    color: AppColors.text,
     fontSize: 14,
     fontWeight: "600",
   },
@@ -168,9 +154,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderRadius: 12,
+    backgroundColor: AppColors.whiteSoft,
+    color: AppColors.inputText,
     fontSize: 15,
-    borderWidth: 2,
-    borderColor: "transparent",
+    borderWidth: 0,
   },
   passwordWrap: {
     position: "relative",
@@ -182,9 +169,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingRight: 70,
     borderRadius: 12,
+    backgroundColor: AppColors.whiteSoft,
+    color: AppColors.inputText,
     fontSize: 15,
-    borderWidth: 2,
-    borderColor: "transparent",
+    borderWidth: 0,
   },
   showPassword: {
     position: "absolute",
@@ -195,21 +183,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   showPasswordText: {
+    color: AppColors.textMuted,
     fontSize: 13,
     fontWeight: "600",
   },
   button: {
     width: "100%",
-    paddingVertical: 15,
-    borderRadius: 12,
+    padding: 2,
+    borderRadius: 14,
+    backgroundColor: AppColors.buttonOuter,
     alignItems: "center",
-    shadowColor: "#263A47",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.24,
-    shadowRadius: 16,
-    elevation: 5,
   },
   btnText: {
+    width: "100%",
+    paddingVertical: 15,
+    borderRadius: 12,
+    backgroundColor: AppColors.buttonInner,
+    textAlign: "center",
+    color: AppColors.white,
     fontSize: 16,
     fontWeight: "700",
   },
@@ -220,9 +211,11 @@ const styles = StyleSheet.create({
     marginTop: 25,
   },
   signupText: {
+    color: AppColors.textMuted,
     fontSize: 14,
   },
   signupLink: {
+    color: AppColors.text,
     fontWeight: "700",
     fontSize: 14,
   },

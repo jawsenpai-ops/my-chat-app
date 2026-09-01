@@ -19,6 +19,8 @@ export async function connectDB() {
     const connection = await db.getConnection();
     console.log("MySQL Database Connected Successfully.");
     connection.release();
+    await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30) NOT NULL DEFAULT ''");
+    await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR(500) NOT NULL DEFAULT ''");
   } catch (error) {
     console.error("Database connection failed:", error);
     process.exit(1);

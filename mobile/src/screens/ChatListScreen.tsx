@@ -13,7 +13,6 @@ type Props = NativeStackScreenProps<RootStackParamList, "ChatList">;
 export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const [chats, setChats] = useState<Chat[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [activeTab, setActiveTab] = useState<"chat" | "profile">("chat");
   const { logout, user } = useAuth();
   const socket = getSocket();
 
@@ -67,6 +66,27 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.storyRowWrap}>
+        <Text style={styles.sectionTitle}>Other Users</Text>
+        <FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.userListContent}
+          data={users}
+          keyExtractor={(item, index) => {
+            const key = item._id || (item as any).id;
+            return key ? `user-${key}-${index}` : `user-idx-${index}`;
+          }}
+          renderItem={({ item }) => (
+            <TouchableOpacity style={styles.userCircle} onPress={() => openChatWithUser(item)}>
+              <Image source={{ uri: item.avatar }} style={styles.avatarLarge} />
+              <Text style={styles.userName} numberOfLines={1}>{item.name}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      </View>
+
+      <Text style={styles.chatListTitle}>Chats</Text>
       <FlatList
         contentContainerStyle={styles.listContent}
         data={chats}
@@ -91,38 +111,20 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         }}
       />
 
-      <Text style={styles.sectionTitle}>Other Users</Text>
-      <FlatList
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        data={users}
-        keyExtractor={(item, index) => {
-          const key = item._id || (item as any).id;
-          return key ? `user-${key}-${index}` : `user-idx-${index}`;
-        }}
-        renderItem={({ item }) => (
-          <TouchableOpacity style={styles.userCircle} onPress={() => openChatWithUser(item)}>
-            <Image source={{ uri: item.avatar }} style={styles.avatar} />
-            <Text style={styles.userName}>{item.name}</Text>
-          </TouchableOpacity>
-        )}
-      />
-
       <View style={styles.bottomTabBar}>
         <TouchableOpacity
-          style={[styles.tabButton, activeTab === "chat" && styles.tabButtonActive]}
-          onPress={() => setActiveTab("chat")}
+          style={styles.tabButton}
         >
-          <Text style={[styles.tabText, activeTab === "chat" && styles.activeTabText]}>chat</Text>
+          <Text style={[styles.tabText, styles.activeTabText]}>chat</Text>
         </TouchableOpacity>
 
         <View style={styles.tabDivider} />
 
         <TouchableOpacity
-          style={[styles.tabButton, activeTab === "profile" && styles.tabButtonActive]}
-          onPress={() => setActiveTab("profile")}
+          style={styles.tabButton}
+          onPress={() => navigation.navigate("Profile")}
         >
-          <Text style={[styles.tabText, activeTab === "profile" && styles.activeTabText]}>profile</Text>
+          <Text style={styles.tabText}>profile</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -141,8 +143,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 14,
     paddingHorizontal: 8,
-    borderBottomWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderBottomWidth: 0,
   },
   headerText: {
     fontSize: 18,
@@ -153,9 +154,18 @@ const styles = StyleSheet.create({
     color: AppColors.primaryDark,
     fontWeight: "600",
   },
+  storyRowWrap: {
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  userListContent: {
+    paddingVertical: 4,
+    paddingHorizontal: 4,
+    alignItems: "center",
+  },
   listContent: {
-    paddingTop: 10,
-    paddingBottom: 8,
+    paddingTop: 8,
+    paddingBottom: 6,
   },
   chatCard: {
     flexDirection: "row",
@@ -163,40 +173,55 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
     borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "rgba(20,42,68,0.06)",
+    borderWidth: 0,
   },
   avatar: { width: 42, height: 42, borderRadius: 21, marginRight: 10 },
+  avatarLarge: { width: 42, height: 42, borderRadius: 21 },
   name: { fontWeight: "700", color: AppColors.primaryDark, fontSize: 15 },
   lastMsg: { color: AppColors.textMuted, fontSize: 12, marginTop: 4 },
-  sectionTitle: { fontWeight: "700", color: AppColors.primaryDark, marginVertical: 12, marginLeft: 8 },
+  sectionTitle: {
+    fontWeight: "700",
+    color: AppColors.primaryDark,
+    marginBottom: 6,
+    marginLeft: 8,
+    fontSize: 15,
+  },
+  chatListTitle: {
+    fontWeight: "700",
+    color: AppColors.primaryDark,
+    marginTop: 6,
+    marginBottom: 8,
+    marginLeft: 8,
+    fontSize: 15,
+  },
   userCircle: {
     alignItems: "center",
-    marginRight: 12,
-    padding: 8,
+    justifyContent: "center",
+    marginRight: 10,
+    width: 62,
+    minHeight: 64,
+    paddingVertical: 4,
     borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "transparent",
   },
   userName: {
     color: AppColors.primaryDark,
-    fontSize: 10,
-    marginTop: 4,
+    fontSize: 9,
+    marginTop: 5,
     fontWeight: "600",
+    textAlign: "center",
+    maxWidth: 54,
   },
   bottomTabBar: {
     flexDirection: "row",
-    height: 62,
+    height: 58,
     alignItems: "center",
     justifyContent: "space-around",
-    backgroundColor: "rgba(255,255,255,0.18)",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.2)",
-    borderRadius: 18,
-    marginTop: 12,
-    marginBottom: 8,
+    backgroundColor: "rgba(20,42,68,0.08)",
+    borderRadius: 16,
+    marginTop: 6,
+    marginBottom: 4,
     overflow: "hidden",
   },
   tabButton: {
@@ -204,14 +229,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     height: "100%",
+    backgroundColor: "transparent",
   },
   tabButtonActive: {
-    backgroundColor: AppColors.primaryDark,
+    backgroundColor: AppColors.buttonInner,
   },
   tabDivider: {
     width: 1,
     height: "60%",
-    backgroundColor: "rgba(255,255,255,0.3)",
+    backgroundColor: "rgba(20,42,68,0.10)",
   },
   tabText: {
     fontSize: 18,

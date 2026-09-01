@@ -2,7 +2,10 @@ export interface User {
   _id: number | string;
   name: string;
   email: string;
+  phone: string;
   avatar: string;
+  bio: string;
+  createdAt: string;
 }
 
 export interface Message {
@@ -35,4 +38,5 @@ export type RootStackParamList = {
   Register: undefined;
   ChatList: undefined;
   ChatRoom: { chatId: string | number; participant: User };
+  Profile: undefined;
 };

@@ -7,8 +7,8 @@ import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
-    const { name, email, password } = req.body;
-    if (!name || !email || !password) {
+    const { name, email, password, phone } = req.body;
+    if (!name || !email || !password || !phone) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
@@ -28,8 +28,8 @@ export async function register(req: Request, res: Response, next: NextFunction) 
 
     // 2. Hashed Password ကို Database ထဲ သို့ သိမ်းဆည်းခြင်း
     const [result] = await db.query<ResultSetHeader>(
-      "INSERT INTO users (name, email, password, avatar) VALUES (?, ?, ?, ?)",
-      [name, email, hashedPassword, avatar]
+      "INSERT INTO users (name, email, password, phone, avatar) VALUES (?, ?, ?, ?, ?)",
+      [name, email, hashedPassword, phone, avatar]
     );
 
     const userId = result.insertId;
@@ -37,7 +37,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
 
     return res.status(201).json({
       token,
-      user: { _id: userId, name, email, avatar },
+      user: { _id: userId, name, email, phone, avatar, bio: "" },
     });
   } catch (error) {
     return next(error);
@@ -73,7 +73,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 
     return res.json({
       token,
-      user: { _id: user.id, name: user.name, email: user.email, avatar: user.avatar },
+      user: { _id: user.id, name: user.name, email: user.email, phone: user.phone, avatar: user.avatar, bio: user.bio, createdAt: user.createdAt },
     });
   } catch (error) {
     return next(error);
@@ -84,7 +84,7 @@ export async function getMe(req: AuthRequest, res: Response, next: NextFunction)
   try {
     const userId = req.userId;
     const [users] = await db.query<RowDataPacket[]>(
-      "SELECT id AS _id, name, email, avatar, createdAt FROM users WHERE id = ?",
+      "SELECT id AS _id, name, email, phone, avatar, bio, createdAt FROM users WHERE id = ?",
       [userId]
     );
 
