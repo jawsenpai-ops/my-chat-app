@@ -7,6 +7,7 @@ import { RegisterScreen } from "./src/screens/RegisterScreen";
 import { ChatListScreen } from "./src/screens/ChatListScreen";
 import { ChatRoomScreen } from "./src/screens/ChatRoomScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
+import { CropProfilePictureScreen } from "./src/screens/CropProfilePictureScreen";
 import { RootStackParamList } from "./src/types";
 import { ActivityIndicator, View } from "react-native";
 import { AppColors } from "./src/theme/colors";
@@ -31,6 +32,7 @@ const AppNavigator = () => {
           <Stack.Screen name="ChatList" component={ChatListScreen} />
           <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="CropProfilePicture" component={CropProfilePictureScreen} />
         </>
       ) : (
         <>

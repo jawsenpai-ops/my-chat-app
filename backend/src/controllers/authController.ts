@@ -21,7 +21,6 @@ export async function register(req: Request, res: Response, next: NextFunction) 
       return res.status(400).json({ message: "User already exists" });
     }
 
-    // 1. Password ကို Salt 10 ဖြင့် Hash (Encrypt) လုပ်ခြင်း
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
     const avatar = `https://i.pravatar.cc/150?u=${encodeURIComponent(email)}`;
@@ -61,8 +60,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     }
 
     const user = users[0];
-    
-    // 3. Encrypted Password ကို တိုက်စစ်ခြင်း
+
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {

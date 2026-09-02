@@ -38,4 +38,5 @@ export type RootStackParamList = {
   ChatList: undefined;
   ChatRoom: { chatId: string | number; participant: User };
   Profile: undefined;
+  CropProfilePicture: { uri: string; width: number; height: number };
 };

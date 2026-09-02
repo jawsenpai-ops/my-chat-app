@@ -32,11 +32,25 @@ export async function getProfile(req: AuthRequest, res: Response, next: NextFunc
 
 export async function updateProfile(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const bio = typeof req.body.bio === "string" ? req.body.bio.trim() : null;
-    if (bio === null || bio.length > 500) {
+    const hasBio = typeof req.body.bio === "string";
+    const hasAvatar = typeof req.body.avatar === "string";
+    const bio = hasBio ? req.body.bio.trim() : null;
+    const avatar = hasAvatar ? req.body.avatar : null;
+    if (!hasBio && !hasAvatar) {
+      return res.status(400).json({ message: "No profile changes provided" });
+    }
+    if (hasBio && bio.length > 500) {
       return res.status(400).json({ message: "Bio must be a string of 500 characters or fewer" });
     }
-    await db.query("UPDATE users SET bio = ? WHERE id = ?", [bio, req.userId]);
+    if (hasAvatar && (!avatar.startsWith("data:image/") || avatar.length > 2_000_000)) {
+      return res.status(400).json({ message: "Profile picture is invalid or too large" });
+    }
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    if (hasBio) { updates.push("bio = ?"); values.push(bio); }
+    if (hasAvatar) { updates.push("avatar = ?"); values.push(avatar); }
+    values.push(req.userId);
+    await db.query(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`, values);
     return getProfile(req, res, next);
   } catch (error) {
     return next(error);

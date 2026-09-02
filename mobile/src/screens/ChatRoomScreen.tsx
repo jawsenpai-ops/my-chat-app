@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform } from "react-native";
+import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList, Message } from "../types";
@@ -80,6 +80,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
         <View style={styles.header}>
+          <Image source={{ uri: participant.avatar }} style={styles.headerAvatar} />
           <Text style={styles.headerText}>{participant.name}</Text>
         </View>
 
@@ -129,6 +130,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: "row",
+    alignItems: "center",
     padding: 15,
     backgroundColor: "rgba(20,42,68,0.05)",
     borderBottomWidth: 0,
@@ -138,6 +141,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: AppColors.primaryDark,
   },
+  headerAvatar: { width: 38, height: 38, borderRadius: 19, marginRight: 10 },
   listContent: {
     paddingVertical: 12,
   },

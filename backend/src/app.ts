@@ -8,7 +8,7 @@ import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
 app.use(cors({ origin: "*", credentials: true }));
-app.use(express.json());
+app.use(express.json({ limit: "3mb" }));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", message: "Server is running" });

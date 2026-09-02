@@ -1,0 +1,3 @@
+mobile/.expo/
+**/node_modules/
+**/.env

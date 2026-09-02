@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import * as ImagePicker from "expo-image-picker";
 import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -15,6 +16,10 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
   const [bio, setBio] = useState(user?.bio || "");
   const [editingBio, setEditingBio] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (user) setProfile(user);
+  }, [user]);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -48,8 +53,34 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
+  const changeProfilePicture = async () => {
+    const permission = await ImagePicker.getMediaLibraryPermissionsAsync();
+    let granted = permission.granted;
+    if (!granted) {
+      const requested = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      granted = requested.granted;
+    }
+    if (!granted) {
+      Alert.alert("Photo permission required", "Allow photo access in Settings to change your profile picture.");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: false,
+      quality: 1,
+    });
+    if (!result.canceled && result.assets[0]) {
+      navigation.navigate("CropProfilePicture", {
+        uri: result.assets[0].uri,
+        width: result.assets[0].width,
+        height: result.assets[0].height,
+      });
+    }
+  };
+
   const showMoreOptions = () => {
     Alert.alert("Profile actions", undefined, [
+      { text: "Change Profile Picture", onPress: changeProfilePicture },
       { text: "Log out", style: "destructive", onPress: logout },
       { text: "Cancel", style: "cancel" },
     ]);
@@ -81,7 +112,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
         <View style={styles.accountSection}>
           <Text style={styles.sectionLabel}>ACCOUNT INFORMATION</Text>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>Joined</Text>
+            <Text style={styles.infoLabel}>Joined Date</Text>
             <Text style={styles.infoValue}>{joinedDate}</Text>
           </View>
         </View>
