@@ -5,9 +5,12 @@ import chatRoutes from "./routes/chatRoutes";
 import messageRoutes from "./routes/messageRoutes";
 import userRoutes from "./routes/userRoutes";
 import { errorHandler } from "./middleware/errorHandler";
+import { apiRateLimiter } from "./middleware/rateLimit";
 
 const app = express();
+app.set("trust proxy", process.env.TRUST_PROXY === "true");
 app.use(cors({ origin: "*", credentials: true }));
+app.use("/api", apiRateLimiter);
 app.use(express.json({ limit: "3mb" }));
 
 app.get("/health", (_req, res) => {

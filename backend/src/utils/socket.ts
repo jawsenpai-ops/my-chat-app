@@ -1,16 +1,44 @@
-import { Server as SocketServer } from "socket.io";
+import { Server as SocketServer, Socket } from "socket.io";
 import { Server as HttpServer } from "http";
 import jwt from "jsonwebtoken";
 import { db } from "../config/database";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { encryptText } from "./crypto"; // 👈 ၁။ encryptText Import ထည့်ထားပါသည်
+import { rateLimitStore } from "../middleware/rateLimit";
 
 export const onlineUsers: Map<string, string> = new Map();
+
+const SOCKET_ERROR_MESSAGE = "Too many requests. Please try again later.";
+
+const consumeSocketLimit = (
+  socket: Socket,
+  userId: string,
+  event: string,
+  limit: number,
+  windowMs: number,
+) => {
+  const result = rateLimitStore.consume(`socket:${userId}:${event}`, limit, windowMs);
+  if (!result.allowed) {
+    socket.emit("socket-error", {
+      message: SOCKET_ERROR_MESSAGE,
+      retryAfterSeconds: result.retryAfterSeconds,
+    });
+    return false;
+  }
+  return true;
+};
 
 export const initializeSocket = (httpServer: HttpServer) => {
   const io = new SocketServer(httpServer, { cors: { origin: "*" } });
 
   io.use(async (socket, next) => {
+    const connectionLimit = rateLimitStore.consume(
+      `socket-connection:ip:${socket.handshake.address}`,
+      20,
+      15 * 60_000,
+    );
+    if (!connectionLimit.allowed) return next(new Error(SOCKET_ERROR_MESSAGE));
+
     const token = socket.handshake.auth.token;
 
     if (!token) return next(new Error("Authentication error"));
@@ -41,15 +69,33 @@ export const initializeSocket = (httpServer: HttpServer) => {
     socket.join(`user:${userId}`);
 
     socket.on("join-chat", (chatId: string) => {
+      if (!consumeSocketLimit(socket, userId, "join-chat", 30, 60_000)) return;
+      if (typeof chatId !== "string" || chatId.length === 0 || chatId.length > 64) return;
       socket.join(`chat:${chatId}`);
     });
 
     socket.on("leave-chat", (chatId: string) => {
+      if (!consumeSocketLimit(socket, userId, "leave-chat", 60, 60_000)) return;
+      if (typeof chatId !== "string" || chatId.length === 0 || chatId.length > 64) return;
       socket.leave(`chat:${chatId}`);
     });
 
     socket.on("send-message", async (data: { chatId: string; text: string }) => {
+      if (!consumeSocketLimit(socket, userId, "send-message", 30, 60_000)) return;
       try {
+        if (
+          !data ||
+          typeof data.chatId !== "string" ||
+          data.chatId.length === 0 ||
+          data.chatId.length > 64 ||
+          typeof data.text !== "string" ||
+          data.text.trim().length === 0 ||
+          data.text.length > 4_000
+        ) {
+          socket.emit("socket-error", { message: "Invalid message" });
+          return;
+        }
+
         const { chatId, text } = data;
 
         const [chatAccess] = await db.query<RowDataPacket[]>(
@@ -107,6 +153,15 @@ export const initializeSocket = (httpServer: HttpServer) => {
     });
 
     socket.on("typing", async (data: { chatId: string; isTyping: boolean }) => {
+      if (!consumeSocketLimit(socket, userId, "typing", 30, 10_000)) return;
+      if (
+        !data ||
+        typeof data.chatId !== "string" ||
+        data.chatId.length === 0 ||
+        data.chatId.length > 64 ||
+        typeof data.isTyping !== "boolean"
+      ) return;
+
       const typingPayload = {
         userId,
         chatId: data.chatId,

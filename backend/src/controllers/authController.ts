@@ -25,7 +25,6 @@ export async function register(req: Request, res: Response, next: NextFunction) 
     const hashedPassword = await bcrypt.hash(password, salt);
     const avatar = `https://i.pravatar.cc/150?u=${encodeURIComponent(email)}`;
 
-    // 2. Hashed Password ကို Database ထဲ သို့ သိမ်းဆည်းခြင်း
     const [result] = await db.query<ResultSetHeader>(
       "INSERT INTO users (name, email, password, phone, avatar) VALUES (?, ?, ?, ?, ?)",
       [name, email, hashedPassword, "", avatar]

@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useState } from "react";
 import { Alert, Image, PanResponder, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImageManipulator from "expo-image-manipulator";
 import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
@@ -86,15 +87,17 @@ export const CropProfilePictureScreen: React.FC<Props> = ({ navigation, route })
 
   return (
     <View style={styles.screen}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} disabled={saving} accessibilityLabel="Cancel crop">
-          <Text style={styles.cancel}>Cancel</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Crop profile picture</Text>
-        <TouchableOpacity onPress={confirmCrop} disabled={saving} accessibilityLabel="Confirm crop" style={styles.confirm}>
-          <Text style={styles.check}>{saving ? "..." : "✓"}</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.headerSafeArea} edges={["top"]}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} disabled={saving} accessibilityLabel="Cancel crop">
+            <Text style={styles.cancel}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={styles.title}>Crop profile picture</Text>
+          <TouchableOpacity onPress={confirmCrop} disabled={saving} accessibilityLabel="Confirm crop" style={styles.confirm}>
+            <Text style={styles.check}>{saving ? "..." : "✓"}</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
 
       <View style={styles.cropStage} {...panResponder.panHandlers}>
         <Image source={{ uri }} style={{ width: width * scale, height: height * scale, transform: [{ translateX: offset.x }, { translateY: offset.y }] }} />
@@ -120,6 +123,7 @@ export const CropProfilePictureScreen: React.FC<Props> = ({ navigation, route })
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#10151d" },
+  headerSafeArea: { backgroundColor: "#10151d" },
   header: { height: 66, paddingHorizontal: 18, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: { color: AppColors.white, fontSize: 17, fontWeight: "700" },
   cancel: { color: "#d7e2ef", fontSize: 16 },

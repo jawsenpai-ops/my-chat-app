@@ -10,6 +10,10 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
     const userId = req.userId;
     const chatId = parseInt(req.params.chatId, 10);
 
+    if (!Number.isSafeInteger(chatId) || chatId < 1) {
+      return res.status(400).json({ message: "Invalid chat ID" });
+    }
+
     const [chatAccess] = await db.query<RowDataPacket[]>(
       "SELECT chatId FROM chat_participants WHERE chatId = ? AND userId = ?",
       [chatId, userId]

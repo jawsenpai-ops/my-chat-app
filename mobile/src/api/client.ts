@@ -1,6 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-// Cloud hosted domain URL
 export const BASE_URL = "https://api.ikiyadm.com";
 
 export async function apiCall<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
