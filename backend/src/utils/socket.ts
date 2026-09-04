@@ -63,8 +63,9 @@ export const initializeSocket = (httpServer: HttpServer) => {
   io.on("connection", (socket) => {
     const userId = socket.data.userId;
     socket.emit("online-users", { userIds: Array.from(onlineUsers.keys()) });
+    const wasOnline = onlineUsers.has(userId);
     onlineUsers.set(userId, socket.id);
-    socket.broadcast.emit("user-online", { userId });
+    if (!wasOnline) socket.broadcast.emit("user-online", { userId });
 
     socket.join(`user:${userId}`);
 
@@ -78,6 +79,25 @@ export const initializeSocket = (httpServer: HttpServer) => {
       if (!consumeSocketLimit(socket, userId, "leave-chat", 60, 60_000)) return;
       if (typeof chatId !== "string" || chatId.length === 0 || chatId.length > 64) return;
       socket.leave(`chat:${chatId}`);
+    });
+
+    socket.on("chat-read", async (chatId: string) => {
+      if (!consumeSocketLimit(socket, userId, "chat-read", 60, 60_000)) return;
+      if (typeof chatId !== "string" || !/^\d+$/.test(chatId)) return;
+      try {
+        const [chatAccess] = await db.query<RowDataPacket[]>(
+          "SELECT chatId FROM chat_participants WHERE chatId = ? AND userId = ?",
+          [chatId, userId],
+        );
+        if (chatAccess.length === 0) return;
+        await db.query(
+          "UPDATE chat_participants SET lastReadAt = NOW() WHERE chatId = ? AND userId = ?",
+          [chatId, userId],
+        );
+        socket.emit("chat-read", { chatId });
+      } catch (error) {
+        // Reading a chat should not interrupt the conversation.
+      }
     });
 
     socket.on("send-message", async (data: { chatId: string; text: string }) => {
@@ -184,6 +204,7 @@ export const initializeSocket = (httpServer: HttpServer) => {
     });
 
     socket.on("disconnect", () => {
+      if (onlineUsers.get(userId) !== socket.id) return;
       onlineUsers.delete(userId);
       socket.broadcast.emit("user-offline", { userId });
     });

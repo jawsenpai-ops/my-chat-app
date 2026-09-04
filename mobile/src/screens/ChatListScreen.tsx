@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, Image, StyleSheet } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList, Chat, User } from "../types";
@@ -7,12 +7,15 @@ import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { getSocket } from "../api/socket";
 import { AppColors } from "../theme/colors";
+import { BottomTabBar } from "../components/BottomTabBar";
+import { AvatarWithStatus } from "../components/AvatarWithStatus";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ChatList">;
 
 export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const [chats, setChats] = useState<Chat[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const { logout, user } = useAuth();
   const socket = getSocket();
 
@@ -37,12 +40,47 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 
   useEffect(() => {
     loadData();
-    socket.on("new-message", () => {
-      loadData();
-    });
+    const handleOnlineUsers = ({ userIds }: { userIds: string[] }) => {
+      setOnlineUserIds(new Set(userIds.map(String)));
+    };
+    const handleUserOnline = ({ userId }: { userId: string | number }) => {
+      setOnlineUserIds((current) => new Set(current).add(String(userId)));
+    };
+    const handleUserOffline = ({ userId }: { userId: string | number }) => {
+      setOnlineUserIds((current) => {
+        const next = new Set(current);
+        next.delete(String(userId));
+        return next;
+      });
+    };
+    const handleNewMessage = (message: { chat: string | number; sender: { _id: string | number } }) => {
+      const senderId = message.sender?._id;
+      const currentUserId = user?._id || (user as any)?.id;
+      if (String(senderId) !== String(currentUserId)) {
+        setChats((current) => current.map((chat) =>
+          String(chat._id) === String(message.chat)
+            ? { ...chat, unreadCount: (chat.unreadCount || 0) + 1 }
+            : chat,
+        ));
+      }
+    };
+    const handleChatRead = ({ chatId }: { chatId: string | number }) => {
+      setChats((current) => current.map((chat) =>
+        String(chat._id) === String(chatId) ? { ...chat, unreadCount: 0 } : chat,
+      ));
+    };
+    socket.on("online-users", handleOnlineUsers);
+    socket.on("user-online", handleUserOnline);
+    socket.on("user-offline", handleUserOffline);
+    socket.on("new-message", handleNewMessage);
+    socket.on("chat-read", handleChatRead);
 
     return () => {
-      socket.off("new-message");
+      socket.off("online-users", handleOnlineUsers);
+      socket.off("user-online", handleUserOnline);
+      socket.off("user-offline", handleUserOffline);
+      socket.off("new-message", handleNewMessage);
+      socket.off("chat-read", handleChatRead);
     };
   }, []);
 
@@ -79,7 +117,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
           }}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.userCircle} onPress={() => openChatWithUser(item)}>
-              <Image source={{ uri: item.avatar }} style={styles.avatarLarge} />
+              <AvatarWithStatus uri={item.avatar} size={42} online={onlineUserIds.has(String(item._id))} />
               <Text style={styles.userName} numberOfLines={1}>{item.name}</Text>
             </TouchableOpacity>
           )}
@@ -101,32 +139,29 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
               style={styles.chatCard}
               onPress={() => item.participant && navigation.navigate("ChatRoom", { chatId: chatId, participant: item.participant })}
             >
-              <Image source={{ uri: item.participant?.avatar }} style={styles.avatar} />
+              <AvatarWithStatus
+                uri={item.participant?.avatar}
+                size={42}
+                online={onlineUserIds.has(String(item.participant?._id))}
+              />
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{item.participant?.name}</Text>
                 <Text style={styles.lastMsg} numberOfLines={1}>{item.lastMessage?.text || "No messages"}</Text>
               </View>
+              {!!item.unreadCount && (
+                <View style={styles.unreadBadge}>
+                  <Text style={styles.unreadText}>{item.unreadCount > 99 ? "99+" : item.unreadCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
           );
         }}
       />
 
-      <View style={styles.bottomTabBar}>
-        <TouchableOpacity
-          style={styles.tabButton}
-        >
-          <Text style={[styles.tabText, styles.activeTabText]}>chat</Text>
-        </TouchableOpacity>
-
-        <View style={styles.tabDivider} />
-
-        <TouchableOpacity
-          style={styles.tabButton}
-          onPress={() => navigation.navigate("Profile")}
-        >
-          <Text style={styles.tabText}>profile</Text>
-        </TouchableOpacity>
-      </View>
+      <BottomTabBar
+        onProfilePress={() => navigation.navigate("Profile")}
+        onActionPress={() => navigation.navigate("Freedom")}
+      />
     </SafeAreaView>
   );
 };
@@ -213,40 +248,18 @@ const styles = StyleSheet.create({
     textAlign: "center",
     maxWidth: 54,
   },
-  bottomTabBar: {
-    flexDirection: "row",
-    height: 58,
-    alignItems: "center",
-    justifyContent: "space-around",
-    backgroundColor: "rgba(20,42,68,0.08)",
-    borderRadius: 16,
-    marginTop: 6,
-    marginBottom: 4,
-    overflow: "hidden",
-  },
-  tabButton: {
-    flex: 1,
+  unreadBadge: {
+    minWidth: 24,
+    height: 24,
+    paddingHorizontal: 6,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    height: "100%",
-    backgroundColor: "transparent",
+    backgroundColor: AppColors.buttonOuter,
   },
-  tabButtonActive: {
-    backgroundColor: AppColors.buttonInner,
-  },
-  tabDivider: {
-    width: 1,
-    height: "60%",
-    backgroundColor: "rgba(20,42,68,0.10)",
-  },
-  tabText: {
-    fontSize: 18,
-    color: AppColors.primaryDark,
-    fontWeight: "500",
-    textTransform: "lowercase",
-  },
-  activeTabText: {
+  unreadText: {
     color: AppColors.white,
+    fontSize: 11,
     fontWeight: "700",
   },
 });

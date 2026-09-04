@@ -22,6 +22,7 @@ export async function connectDB() {
     await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30) NOT NULL DEFAULT ''");
     await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR(500) NOT NULL DEFAULT ''");
     await db.query("ALTER TABLE users MODIFY COLUMN avatar TEXT NOT NULL");
+    await db.query("ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS lastReadAt DATETIME NULL");
   } catch (error) {
     console.error("Database connection failed:", error);
     process.exit(1);

@@ -8,9 +8,11 @@ import { ChatListScreen } from "./src/screens/ChatListScreen";
 import { ChatRoomScreen } from "./src/screens/ChatRoomScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { CropProfilePictureScreen } from "./src/screens/CropProfilePictureScreen";
+import { FreedomScreen } from "./src/screens/FreedomScreen";
 import { RootStackParamList } from "./src/types";
 import { ActivityIndicator, View } from "react-native";
 import { AppColors } from "./src/theme/colors";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -32,6 +34,7 @@ const AppNavigator = () => {
           <Stack.Screen name="ChatList" component={ChatListScreen} />
           <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
+          <Stack.Screen name="Freedom" component={FreedomScreen} />
           <Stack.Screen name="CropProfilePicture" component={CropProfilePictureScreen} />
         </>
       ) : (
@@ -46,10 +49,12 @@ const AppNavigator = () => {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <NavigationContainer>
-        <AppNavigator />
-      </NavigationContainer>
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <NavigationContainer>
+          <AppNavigator />
+        </NavigationContainer>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

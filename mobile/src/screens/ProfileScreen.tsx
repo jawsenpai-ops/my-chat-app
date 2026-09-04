@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
-import { Alert, Image, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { RootStackParamList, User } from "../types";
 import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { AppColors } from "../theme/colors";
+import { BottomTabBar } from "../components/BottomTabBar";
+import { AvatarWithStatus } from "../components/AvatarWithStatus";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Profile">;
 
@@ -102,9 +104,9 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.profileIntro}>
-          <Image source={{ uri: profile?.avatar }} style={styles.avatar} />
+          <AvatarWithStatus uri={profile?.avatar} size={104} online />
           <Text style={styles.name}>{profile?.name || "User"}</Text>
           <Text style={styles.email}>{profile?.email}</Text>
         </View>
@@ -159,12 +161,17 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
         <Text style={styles.avatarNote}>Profile picture</Text>
         <Text style={styles.helperText}>Your profile picture is shown to your contacts.</Text>
       </ScrollView>
+      <BottomTabBar
+        onProfilePress={() => navigation.navigate("Profile")}
+        onActionPress={() => navigation.navigate("Freedom")}
+      />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: AppColors.background },
+  scrollView: { flex: 1 },
   header: { height: 58, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 12 },
   headerButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
   backIcon: { color: AppColors.primaryDark, fontSize: 38, fontWeight: "300", lineHeight: 40 },

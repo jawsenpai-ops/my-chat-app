@@ -23,6 +23,11 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
       return res.status(404).json({ message: "Chat not found" });
     }
 
+    await db.query(
+      "UPDATE chat_participants SET lastReadAt = NOW() WHERE chatId = ? AND userId = ?",
+      [chatId, userId],
+    );
+
     const query = `
       SELECT 
         m.id AS _id,

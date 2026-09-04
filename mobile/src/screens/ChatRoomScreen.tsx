@@ -23,6 +23,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
       try {
         const data = await apiCall<Message[]>(`/messages/chat/${chatId}`);
         setMessages(data);
+        getSocket().emit("chat-read", String(chatId));
       } catch (err) {
         console.error("Failed to fetch messages:", err);
       }

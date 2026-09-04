@@ -5,6 +5,7 @@ export interface User {
   avatar: string;
   bio: string;
   createdAt: string;
+  online?: boolean;
 }
 
 export interface Message {
@@ -30,6 +31,7 @@ export interface Chat {
   } | null;
   lastMessageAt: string;
   createdAt: string;
+  unreadCount?: number;
 }
 
 export type RootStackParamList = {
@@ -38,5 +40,6 @@ export type RootStackParamList = {
   ChatList: undefined;
   ChatRoom: { chatId: string | number; participant: User };
   Profile: undefined;
+  Freedom: undefined;
   CropProfilePicture: { uri: string; width: number; height: number };
 };

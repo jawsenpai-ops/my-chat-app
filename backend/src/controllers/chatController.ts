@@ -18,7 +18,14 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
         u.avatar AS participant_avatar,
         m.id AS message_id,
         m.text AS message_text,
-        m.createdAt AS message_createdAt
+        m.createdAt AS message_createdAt,
+        (
+          SELECT COUNT(*)
+          FROM messages unread_m
+          WHERE unread_m.chatId = c.id
+            AND unread_m.senderId != ?
+            AND (cp.lastReadAt IS NULL OR unread_m.createdAt > cp.lastReadAt)
+        ) AS unread_count
       FROM chats c
       JOIN chat_participants cp ON c.id = cp.chatId
       JOIN chat_participants cp_other ON c.id = cp_other.chatId AND cp_other.userId != ?
@@ -28,10 +35,11 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
       ORDER BY c.lastMessageAt DESC
     `;
 
-    const [rows] = await db.query<RowDataPacket[]>(query, [userId, userId]);
+    const [rows] = await db.query<RowDataPacket[]>(query, [userId, userId, userId]);
 
     const formattedChats = rows.map((row) => ({
       _id: row._id,
+      unreadCount: Number(row.unread_count || 0),
       participant: {
         _id: row.participant_id,
         name: row.participant_name,
