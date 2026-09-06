@@ -1,4 +1,5 @@
 import mysql from "mysql2/promise";
+import type { RowDataPacket } from "mysql2";
 import dotenv from "dotenv";
 import path from "path";
 
@@ -22,8 +23,30 @@ export async function connectDB() {
     await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30) NOT NULL DEFAULT ''");
     await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR(500) NOT NULL DEFAULT ''");
     await db.query("ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS lastReadAt DATETIME NULL");
+    await verifySecuritySchema();
   } catch (error) {
-    console.error("Database connection failed:", error);
+    console.error("Database startup check failed:", error instanceof Error ? error.message : "Unknown database error");
     process.exit(1);
+  }
+}
+
+async function verifySecuritySchema() {
+  const requiredColumns = ["email_verified", "role", "deleted_at", "token_version"];
+  const [columns] = await db.query<(RowDataPacket & { Field: string })[]>("SHOW COLUMNS FROM users");
+  const availableColumns = new Set(columns.map((column) => column.Field));
+  const missingColumns = requiredColumns.filter((column) => !availableColumns.has(column));
+
+  const [tables] = await db.query<(RowDataPacket & { TABLE_NAME: string })[]>(
+    "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?, ?)",
+    ["email_verification_tokens", "password_reset_tokens", "feedback"],
+  );
+  const availableTables = new Set(tables.map((table) => table.TABLE_NAME));
+  const missingTables = ["email_verification_tokens", "password_reset_tokens", "feedback"]
+    .filter((table) => !availableTables.has(table));
+
+  if (missingColumns.length > 0 || missingTables.length > 0) {
+    throw new Error(
+      `Database migration required. Missing users columns: ${missingColumns.join(", ") || "none"}; missing tables: ${missingTables.join(", ") || "none"}. Apply migrations/001_security_accounts_feedback.sql before starting the service.`,
+    );
   }
 }
