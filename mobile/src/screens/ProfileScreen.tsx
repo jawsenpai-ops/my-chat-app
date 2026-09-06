@@ -83,8 +83,22 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
   const showMoreOptions = () => {
     Alert.alert("Profile actions", undefined, [
       { text: "Change Profile Picture", onPress: changeProfilePicture },
+      ...(user?.role === "admin" ? [{ text: "Admin Dashboard", onPress: () => navigation.navigate("AdminDashboard") }] : []),
+      { text: "Delete account", style: "destructive", onPress: confirmDeleteAccount },
       { text: "Log out", style: "destructive", onPress: logout },
       { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  const confirmDeleteAccount = () => {
+    Alert.alert("Delete account", "This permanently deletes your account. Continue?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+        try {
+          await apiCall("/account", { method: "DELETE", body: JSON.stringify({ confirmation: "DELETE" }) });
+          await logout();
+        } catch (error: any) { Alert.alert("Could not delete account", error.message); }
+      } },
     ]);
   };
 

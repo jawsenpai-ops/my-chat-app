@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Image } from "react-native";
+import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Image, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList, Message } from "../types";
@@ -73,6 +73,20 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
     setText("");
   };
 
+  const deleteMessage = (message: Message) => {
+    const messageId = message._id || (message as any).id;
+    if (!messageId) return;
+    Alert.alert("Delete message", "Delete this message for everyone?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+        try {
+          await apiCall(`/messages/${messageId}`, { method: "DELETE" });
+          setMessages((current) => current.filter((item) => String(item._id || (item as any).id) !== String(messageId)));
+        } catch (error: any) { Alert.alert("Could not delete message", error.message); }
+      } },
+    ]);
+  };
+
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <KeyboardAvoidingView
@@ -98,9 +112,9 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
             const isMe = String(senderId) === String(currentUserId);
 
             return (
-              <View style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}>
+              <TouchableOpacity onLongPress={() => isMe && deleteMessage(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}>
                 <Text style={isMe ? styles.myText : styles.otherText}>{item.displayText ?? item.text}</Text>
-              </View>
+              </TouchableOpacity>
             );
           }}
         />

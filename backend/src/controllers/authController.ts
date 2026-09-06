@@ -6,9 +6,13 @@ import jwt from "jsonwebtoken";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { normalizeEmail, isValidPassword } from "../utils/validation";
 import { createRawToken, hashToken } from "../utils/tokens";
-import { sendPasswordResetEmail, sendVerificationEmail } from "../utils/mail";
+import { MailDeliveryError, sendPasswordResetEmail, sendVerificationCodeEmail, sendVerificationEmail } from "../utils/mail";
+import { generateOtp, hashOtp } from "../utils/otp";
 
 const genericResetMessage = "If an account exists with that email, a password reset email has been sent.";
+const genericCodeMessage = "If an account exists with that email, a verification code has been sent.";
+const otpExpirationMinutes = Number(process.env.OTP_EXPIRATION_MINUTES || 10);
+const otpMaxAttempts = Number(process.env.OTP_MAX_ATTEMPTS || 5);
 
 function signToken(userId: number, tokenVersion = 0) {
   const secret = process.env.JWT_SECRET;
@@ -54,7 +58,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
     const userId = result.insertId;
     await createVerificationToken(userId, email);
     const token = signToken(userId);
-    return res.status(201).json({ token, user: { _id: userId, name, email, avatar, bio: "" } });
+    return res.status(201).json({ token, user: { _id: userId, name, email, avatar, bio: "", role: "user" } });
   } catch (error) {
     return next(error);
   }
@@ -79,7 +83,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     const token = signToken(user.id, Number(user.token_version || 0));
     return res.json({
       token,
-      user: { _id: user.id, name: user.name, email: user.email, phone: user.phone, avatar: user.avatar, bio: user.bio, createdAt: user.createdAt },
+      user: { _id: user.id, name: user.name, email: user.email, phone: user.phone, avatar: user.avatar, bio: user.bio, role: user.role, createdAt: user.createdAt },
     });
   } catch (error) {
     return next(error);
@@ -89,7 +93,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
 export async function getMe(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const [users] = await db.query<RowDataPacket[]>(
-      "SELECT id AS _id, name, email, phone, avatar, bio, createdAt, email_verified AS emailVerified FROM users WHERE id = ? AND deleted_at IS NULL",
+      "SELECT id AS _id, name, email, phone, avatar, bio, role, createdAt, email_verified AS emailVerified FROM users WHERE id = ? AND deleted_at IS NULL",
       [req.userId],
     );
     if (users.length === 0) return res.status(404).json({ message: "User not found" });
@@ -156,6 +160,104 @@ export async function resetPassword(req: Request, res: Response, next: NextFunct
     await db.query("UPDATE users SET password = ?, token_version = COALESCE(token_version, 0) + 1 WHERE id = ?", [passwordHash, tokens[0].user_id]);
     await db.query("UPDATE password_reset_tokens SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL", [tokens[0].user_id]);
     return res.json({ message: "Password reset successfully." });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function sendCode(req: Request, res: Response, next: NextFunction) {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (!email) return res.json({ message: genericCodeMessage });
+
+    const [users] = await db.query<RowDataPacket[]>(
+      "SELECT id, email FROM users WHERE email = ? AND email_verified = 0 AND deleted_at IS NULL LIMIT 1",
+      [email],
+    );
+    if (users.length === 0) return res.json({ message: genericCodeMessage });
+
+    const userId = Number(users[0].id);
+    const code = generateOtp();
+    const expiresAt = new Date(Date.now() + otpExpirationMinutes * 60_000);
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.query("UPDATE email_verification_codes SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL", [userId]);
+      await connection.query(
+        "INSERT INTO email_verification_codes (user_id, code_hash, expires_at) VALUES (?, ?, ?)",
+        [userId, hashOtp(code), expiresAt],
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+
+    try {
+      await sendVerificationCodeEmail(email, code);
+    } catch (error) {
+      await db.query("UPDATE email_verification_codes SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL", [userId]);
+      if (error instanceof MailDeliveryError) throw error;
+      throw new MailDeliveryError();
+    }
+    return res.json({ message: genericCodeMessage });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function verifyCode(req: Request, res: Response, next: NextFunction) {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
+    if (!email || !/^\d{6}$/.test(code)) return res.status(400).json({ message: "Invalid or expired verification code." });
+
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT code.id, code.user_id, code.attempts
+       FROM email_verification_codes code
+       INNER JOIN users ON users.id = code.user_id
+       WHERE users.email = ? AND users.email_verified = 0 AND users.deleted_at IS NULL
+         AND code.used_at IS NULL AND code.expires_at > NOW()
+       ORDER BY code.created_at DESC LIMIT 1`,
+      [email],
+    );
+    if (rows.length === 0) return res.status(400).json({ message: "Invalid or expired verification code." });
+
+    const verification = rows[0];
+    const [matches] = await db.query<RowDataPacket[]>(
+      "SELECT id FROM email_verification_codes WHERE id = ? AND code_hash = ? AND used_at IS NULL AND expires_at > NOW() LIMIT 1",
+      [verification.id, hashOtp(code)],
+    );
+    if (matches.length === 0) {
+      await db.query(
+        "UPDATE email_verification_codes SET attempts = LEAST(attempts + 1, ?), used_at = IF(attempts + 1 >= ?, NOW(), used_at) WHERE id = ? AND used_at IS NULL",
+        [otpMaxAttempts, otpMaxAttempts, verification.id],
+      );
+      return res.status(400).json({ message: "Invalid or expired verification code." });
+    }
+
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [updated] = await connection.query<ResultSetHeader>(
+        "UPDATE email_verification_codes SET used_at = NOW() WHERE id = ? AND used_at IS NULL AND expires_at > NOW()",
+        [verification.id],
+      );
+      if (updated.affectedRows !== 1) {
+        await connection.rollback();
+        return res.status(400).json({ message: "Invalid or expired verification code." });
+      }
+      await connection.query("UPDATE users SET email_verified = 1 WHERE id = ? AND email_verified = 0", [verification.user_id]);
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+    return res.json({ message: "Email verified successfully." });
   } catch (error) {
     return next(error);
   }

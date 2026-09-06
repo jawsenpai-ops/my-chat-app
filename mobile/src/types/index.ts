@@ -4,6 +4,7 @@ export interface User {
   email: string;
   avatar: string;
   bio: string;
+  role?: "user" | "admin";
   createdAt: string;
   online?: boolean;
 }
@@ -36,10 +37,13 @@ export interface Chat {
 
 export type RootStackParamList = {
   Login: undefined;
+  ForgotPassword: undefined;
+  ResetPassword: { token?: string };
   Register: undefined;
   ChatList: undefined;
   ChatRoom: { chatId: string | number; participant: User };
   Profile: undefined;
   Freedom: undefined;
   CropProfilePicture: { uri: string; width: number; height: number };
+  AdminDashboard: undefined;
 };

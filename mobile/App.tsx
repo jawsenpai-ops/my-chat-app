@@ -9,6 +9,9 @@ import { ChatRoomScreen } from "./src/screens/ChatRoomScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { CropProfilePictureScreen } from "./src/screens/CropProfilePictureScreen";
 import { FreedomScreen } from "./src/screens/FreedomScreen";
+import { ForgotPasswordScreen } from "./src/screens/ForgotPasswordScreen";
+import { ResetPasswordScreen } from "./src/screens/ResetPasswordScreen";
+import { AdminDashboardScreen } from "./src/screens/AdminDashboardScreen";
 import { RootStackParamList } from "./src/types";
 import { ActivityIndicator, View } from "react-native";
 import { AppColors } from "./src/theme/colors";
@@ -36,11 +39,14 @@ const AppNavigator = () => {
           <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="Freedom" component={FreedomScreen} />
           <Stack.Screen name="CropProfilePicture" component={CropProfilePictureScreen} />
+          <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
         </>
       ) : (
         <>
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+          <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
         </>
       )}
     </Stack.Navigator>

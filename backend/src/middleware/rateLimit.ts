@@ -155,3 +155,10 @@ export const feedbackRateLimiter = createRateLimiter({
   limit: 5,
   windowMs: 60 * 60_000,
 });
+
+export const sendCodeRateLimiter = createRateLimiter({
+  name: "send-code",
+  limit: Number(process.env.OTP_REQUEST_RATE_LIMIT || 5),
+  windowMs: Number(process.env.OTP_REQUEST_RATE_WINDOW_MINUTES || 60) * 60_000,
+  message: "Too many verification code requests. Please try again later.",
+});
