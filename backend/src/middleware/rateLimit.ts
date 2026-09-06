@@ -125,3 +125,33 @@ export const userRateLimiter = createRateLimiter({
   limit: 60,
   windowMs: 60_000,
 });
+
+export const forgotPasswordRateLimiter = createRateLimiter({
+  name: "forgot-password",
+  limit: 5,
+  windowMs: 60 * 60_000,
+});
+
+export const resetPasswordRateLimiter = createRateLimiter({
+  name: "reset-password",
+  limit: 10,
+  windowMs: 60 * 60_000,
+});
+
+export const resendVerificationRateLimiter = createRateLimiter({
+  name: "resend-verification",
+  limit: 3,
+  windowMs: 60 * 60_000,
+});
+
+export const accountActionRateLimiter = createRateLimiter({
+  name: "account-actions",
+  limit: 10,
+  windowMs: 15 * 60_000,
+});
+
+export const feedbackRateLimiter = createRateLimiter({
+  name: "feedback",
+  limit: 5,
+  windowMs: 60 * 60_000,
+});

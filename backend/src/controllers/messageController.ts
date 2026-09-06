@@ -40,7 +40,7 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
         u.avatar AS sender_avatar
       FROM messages m
       JOIN users u ON m.senderId = u.id
-      WHERE m.chatId = ?
+      WHERE m.chatId = ? AND m.deleted_at IS NULL
       ORDER BY m.createdAt ASC
     `;
 
@@ -60,6 +60,25 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
     }));
 
     return res.json(formattedMessages);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function deleteMessage(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const messageId = Number(req.params.messageId);
+    if (!Number.isSafeInteger(messageId) || messageId < 1) return res.status(400).json({ message: "Invalid message ID" });
+    const [messages] = await db.query<RowDataPacket[]>(
+      `SELECT m.id, m.chatId, m.senderId
+       FROM messages m JOIN chat_participants cp ON cp.chatId = m.chatId AND cp.userId = ?
+       WHERE m.id = ?`,
+      [req.userId, messageId],
+    );
+    if (messages.length === 0) return res.status(404).json({ message: "Message not found" });
+    if (Number(messages[0].senderId) !== Number(req.userId)) return res.status(403).json({ message: "Forbidden." });
+    await db.query("UPDATE messages SET deleted_at = NOW() WHERE id = ? AND senderId = ? AND deleted_at IS NULL", [messageId, req.userId]);
+    return res.json({ message: "Message deleted." });
   } catch (error) {
     return next(error);
   }

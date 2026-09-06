@@ -44,10 +44,12 @@ export const initializeSocket = (httpServer: HttpServer) => {
     if (!token) return next(new Error("Authentication error"));
 
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret") as { userId: number };
+      const secret = process.env.JWT_SECRET;
+      if (!secret) return next(new Error("Authentication error"));
+      const decoded = jwt.verify(token, secret) as { userId: number };
       
       const [users] = await db.query<RowDataPacket[]>(
-        "SELECT id FROM users WHERE id = ?",
+        "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL",
         [decoded.userId]
       );
 
@@ -69,16 +71,42 @@ export const initializeSocket = (httpServer: HttpServer) => {
 
     socket.join(`user:${userId}`);
 
-    socket.on("join-chat", (chatId: string) => {
+    socket.on("join-chat", async (chatId: string) => {
       if (!consumeSocketLimit(socket, userId, "join-chat", 30, 60_000)) return;
-      if (typeof chatId !== "string" || chatId.length === 0 || chatId.length > 64) return;
-      socket.join(`chat:${chatId}`);
+      if (typeof chatId !== "string" || !/^\d+$/.test(chatId) || chatId.length > 64) return;
+      try {
+        const [access] = await db.query<RowDataPacket[]>("SELECT chatId FROM chat_participants WHERE chatId = ? AND userId = ?", [chatId, userId]);
+        if (access.length > 0) socket.join(`chat:${chatId}`);
+      } catch (error) {
+        socket.emit("socket-error", { message: "Unable to join chat" });
+      }
     });
 
-    socket.on("leave-chat", (chatId: string) => {
+    socket.on("leave-chat", async (chatId: string) => {
       if (!consumeSocketLimit(socket, userId, "leave-chat", 60, 60_000)) return;
-      if (typeof chatId !== "string" || chatId.length === 0 || chatId.length > 64) return;
+      if (typeof chatId !== "string" || !/^\d+$/.test(chatId) || chatId.length > 64) return;
       socket.leave(`chat:${chatId}`);
+    });
+
+    socket.on("delete-message", async (messageId: string) => {
+      if (!consumeSocketLimit(socket, userId, "delete-message", 20, 60_000)) return;
+      if (typeof messageId !== "string" || !/^\d+$/.test(messageId)) return;
+      try {
+        const [messages] = await db.query<RowDataPacket[]>(
+          `SELECT m.id, m.chatId, m.senderId
+           FROM messages m JOIN chat_participants cp ON cp.chatId = m.chatId AND cp.userId = ?
+           WHERE m.id = ? AND m.deleted_at IS NULL`,
+          [userId, messageId],
+        );
+        if (messages.length === 0 || String(messages[0].senderId) !== String(userId)) {
+          socket.emit("socket-error", { message: "Forbidden." });
+          return;
+        }
+        await db.query("UPDATE messages SET deleted_at = NOW() WHERE id = ? AND senderId = ? AND deleted_at IS NULL", [messageId, userId]);
+        io.to(`chat:${messages[0].chatId}`).emit("message-deleted", { messageId });
+      } catch (error) {
+        socket.emit("socket-error", { message: "Failed to delete message" });
+      }
     });
 
     socket.on("chat-read", async (chatId: string) => {
@@ -181,6 +209,13 @@ export const initializeSocket = (httpServer: HttpServer) => {
         data.chatId.length > 64 ||
         typeof data.isTyping !== "boolean"
       ) return;
+
+      try {
+        const [access] = await db.query<RowDataPacket[]>("SELECT chatId FROM chat_participants WHERE chatId = ? AND userId = ?", [data.chatId, userId]);
+        if (access.length === 0) return;
+      } catch (error) {
+        return;
+      }
 
       const typingPayload = {
         userId,

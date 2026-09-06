@@ -2,7 +2,7 @@ import type { Response, NextFunction } from "express";
 import type { AuthRequest } from "../middleware/auth";
 import { db } from "../config/database";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
-import { decryptText } from "../utils/crypto"; // 👈 decryptText ကို Import ထည့်ထားသည်
+import { decryptText } from "../utils/crypto";
 
 export async function getChats(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -30,7 +30,7 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
       JOIN chat_participants cp ON c.id = cp.chatId
       JOIN chat_participants cp_other ON c.id = cp_other.chatId AND cp_other.userId != ?
       JOIN users u ON cp_other.userId = u.id
-      LEFT JOIN messages m ON c.lastMessageId = m.id
+      LEFT JOIN messages m ON c.lastMessageId = m.id AND m.deleted_at IS NULL
       WHERE cp.userId = ?
       ORDER BY c.lastMessageAt DESC
     `;
@@ -48,7 +48,7 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
       },
       lastMessage: row.message_id ? {
         _id: row.message_id,
-        text: row.message_text ? decryptText(row.message_text) : "", // 👈 Decrypt လုပ်လိုက်သည်
+        text: row.message_text ? decryptText(row.message_text) : "",
         createdAt: row.message_createdAt
       } : null,
       lastMessageAt: row.lastMessageAt,
@@ -97,9 +97,11 @@ export async function getOrCreateChat(req: AuthRequest, res: Response, next: Nex
     }
 
     const [participantRows] = await db.query<RowDataPacket[]>(
-      "SELECT id AS _id, name, email, avatar FROM users WHERE id = ?",
+      "SELECT id AS _id, name, email, avatar FROM users WHERE id = ? AND deleted_at IS NULL",
       [participantId]
     );
+
+    if (participantRows.length === 0) return res.status(404).json({ message: "User not found" });
 
     const [chatRows] = await db.query<RowDataPacket[]>(
       "SELECT id AS _id, lastMessageAt, createdAt FROM chats WHERE id = ?",
