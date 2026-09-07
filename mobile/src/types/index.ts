@@ -33,17 +33,36 @@ export interface Chat {
   lastMessageAt: string;
   createdAt: string;
   unreadCount?: number;
+  isNew?: boolean;
+}
+
+export interface Post {
+  _id: number | string;
+  body: string;
+  imageUrl?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+  author: User;
+  likeCount: number;
+  likedByMe: boolean;
+  commentCount: number;
+  isOwner: boolean;
+}
+
+export interface PostComment {
+  _id: number | string;
+  body: string;
+  createdAt: string;
+  author: Pick<User, "_id" | "name" | "avatar">;
 }
 
 export type RootStackParamList = {
   Login: undefined;
-  ForgotPassword: undefined;
-  ResetPassword: { token?: string };
   Register: undefined;
   ChatList: undefined;
   ChatRoom: { chatId: string | number; participant: User };
   Profile: undefined;
-  Freedom: undefined;
+  Freedom: { openComposer?: boolean } | undefined;
   CropProfilePicture: { uri: string; width: number; height: number };
   AdminDashboard: undefined;
 };

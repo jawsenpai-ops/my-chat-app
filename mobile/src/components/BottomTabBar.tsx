@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppColors } from "../theme/colors";
 import { useAuth } from "../context/AuthContext";
@@ -7,14 +7,17 @@ import { getSocket } from "../api/socket";
 
 type Props = {
   onProfilePress: () => void;
+  onCreatePress?: () => void;
   onActionPress: () => void;
+  showCreate?: boolean;
 };
 
-export const BottomTabBar: React.FC<Props> = ({ onProfilePress, onActionPress }) => {
+export const BottomTabBar: React.FC<Props> = ({ onProfilePress, onCreatePress, onActionPress, showCreate = false }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const socket = getSocket();
   const [isOnline, setIsOnline] = useState(socket.connected);
+  const createProgress = React.useRef(new Animated.Value(showCreate ? 0 : 1)).current;
 
   useEffect(() => {
     const handleConnect = () => setIsOnline(true);
@@ -26,6 +29,12 @@ export const BottomTabBar: React.FC<Props> = ({ onProfilePress, onActionPress })
       socket.off("disconnect", handleDisconnect);
     };
   }, [socket]);
+
+  useEffect(() => {
+    if (!showCreate) return;
+    createProgress.setValue(0);
+    Animated.spring(createProgress, { toValue: 1, friction: 6, tension: 90, useNativeDriver: true }).start();
+  }, [createProgress, showCreate]);
 
   return (
     <View style={[styles.safeArea, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}>
@@ -45,6 +54,11 @@ export const BottomTabBar: React.FC<Props> = ({ onProfilePress, onActionPress })
             <Text style={styles.status}>{isOnline ? "Online" : "Offline"}</Text>
           </View>
         </TouchableOpacity>
+        {showCreate && onCreatePress && <Animated.View style={[styles.addButton, { opacity: createProgress, transform: [{ scale: createProgress }] }]}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="Create post" onPress={onCreatePress} style={styles.addButtonTouch}>
+            <Text style={styles.addIcon}>+</Text>
+          </TouchableOpacity>
+        </Animated.View>}
         <TouchableOpacity
           accessibilityRole="button"
           accessibilityLabel="Open Freedom"
@@ -127,6 +141,20 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: AppColors.buttonInner,
   },
+  addButton: {
+    position: "absolute",
+    top: 12,
+    left: "50%",
+    marginLeft: -22,
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 14,
+    backgroundColor: AppColors.buttonOuter,
+  },
+  addButtonTouch: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  addIcon: { color: AppColors.white, fontSize: 28, fontWeight: "400", lineHeight: 30 },
   actionIcon: {
     color: AppColors.white,
     fontSize: 23,

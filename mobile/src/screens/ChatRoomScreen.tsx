@@ -52,12 +52,17 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
         });
       }
     };
+    const handleMessageDeleted = ({ messageId }: { messageId: string | number }) => {
+      setMessages((current) => current.filter((item) => String(item._id || (item as any).id) !== String(messageId)));
+    };
 
     socket.on("new-message", handleNewMessage);
+    socket.on("message-deleted", handleMessageDeleted);
 
     return () => {
       socket.emit("leave-chat", String(chatId));
       socket.off("new-message", handleNewMessage);
+      socket.off("message-deleted", handleMessageDeleted);
     };
   }, [chatId]);
 
@@ -79,10 +84,13 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
     Alert.alert("Delete message", "Delete this message for everyone?", [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
+        setMessages((current) => current.filter((item) => String(item._id || (item as any).id) !== String(messageId)));
         try {
           await apiCall(`/messages/${messageId}`, { method: "DELETE" });
-          setMessages((current) => current.filter((item) => String(item._id || (item as any).id) !== String(messageId)));
-        } catch (error: any) { Alert.alert("Could not delete message", error.message); }
+        } catch (error: any) {
+          setMessages((current) => current.some((item) => String(item._id || (item as any).id) === String(messageId)) ? current : [...current, message]);
+          Alert.alert("Could not delete message", error.message);
+        }
       } },
     ]);
   };

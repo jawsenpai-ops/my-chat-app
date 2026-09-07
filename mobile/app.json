@@ -5,6 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/Plasma.jpg",
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
@@ -15,6 +16,7 @@
     "android": {
       "package": "com.mychat.mobile",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/Plasma.jpg",
         "backgroundColor": "#ffffff"
       }
     },

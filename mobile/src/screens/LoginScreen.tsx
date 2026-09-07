@@ -74,10 +74,6 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.btnText}>{loading ? "Signing in..." : "Login"}</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => navigation.navigate("ForgotPassword")}>
-          <Text style={styles.forgotText}>Forgot password?</Text>
-        </TouchableOpacity>
-
         <View style={styles.divider}>
           <Text style={styles.dividerText}>OR</Text>
         </View>
@@ -191,7 +187,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginVertical: 25,
   },
-  forgotText: { textAlign: "center", color: AppColors.buttonInner, fontSize: 14, fontWeight: "600", marginTop: 16 },
   dividerText: {
     flex: 1,
     textAlign: "center",

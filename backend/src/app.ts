@@ -10,6 +10,7 @@ import helmet from "helmet";
 import accountRoutes from "./routes/accountRoutes";
 import feedbackRoutes from "./routes/feedbackRoutes";
 import adminRoutes from "./routes/adminRoutes";
+import postRoutes from "./routes/postRoutes";
 
 const app = express();
 app.set("trust proxy", process.env.TRUST_PROXY === "true");
@@ -33,6 +34,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/account", accountRoutes);
 app.use("/api/feedback", feedbackRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/posts", postRoutes);
 app.use((_req, res) => {
   res.status(404).json({ message: "Route not found" });
 });

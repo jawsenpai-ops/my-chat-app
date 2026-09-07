@@ -37,16 +37,16 @@ async function verifySecuritySchema() {
   const missingColumns = requiredColumns.filter((column) => !availableColumns.has(column));
 
   const [tables] = await db.query<(RowDataPacket & { TABLE_NAME: string })[]>(
-    "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?, ?, ?)",
-    ["email_verification_tokens", "email_verification_codes", "password_reset_tokens", "feedback"],
+    "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?, ?, ?, ?)",
+    ["email_verification_tokens", "feedback", "posts", "post_likes", "post_comments"],
   );
   const availableTables = new Set(tables.map((table) => table.TABLE_NAME));
-  const missingTables = ["email_verification_tokens", "email_verification_codes", "password_reset_tokens", "feedback"]
+  const missingTables = ["email_verification_tokens", "feedback", "posts", "post_likes", "post_comments"]
     .filter((table) => !availableTables.has(table));
 
   if (missingColumns.length > 0 || missingTables.length > 0) {
     throw new Error(
-      `Database migration required. Missing users columns: ${missingColumns.join(", ") || "none"}; missing tables: ${missingTables.join(", ") || "none"}. Apply migrations/001_security_accounts_feedback.sql and migrations/003_email_verification_codes.sql before starting the service.`,
+      `Database migration required. Missing users columns: ${missingColumns.join(", ") || "none"}; missing tables: ${missingTables.join(", ") || "none"}. Apply migrations/001_security_accounts_feedback.sql and migrations/004_posts.sql before starting the service.`,
     );
   }
 }

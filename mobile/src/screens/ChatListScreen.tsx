@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList, Chat, User } from "../types";
@@ -15,6 +15,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "ChatList">;
 export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const [chats, setChats] = useState<Chat[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [userSearch, setUserSearch] = useState("");
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const { logout, user } = useAuth();
   const socket = getSocket();
@@ -40,6 +41,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 
   useEffect(() => {
     loadData();
+    const unsubscribeFocus = navigation.addListener("focus", loadData);
     const handleOnlineUsers = ({ userIds }: { userIds: string[] }) => {
       setOnlineUserIds(new Set(userIds.map(String)));
     };
@@ -53,16 +55,17 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         return next;
       });
     };
-    const handleNewMessage = (message: { chat: string | number; sender: { _id: string | number } }) => {
+    const handleNewMessage = (message: { _id: string | number; chat: string | number; text: string; createdAt: string; sender: { _id: string | number } }) => {
       const senderId = message.sender?._id;
       const currentUserId = user?._id || (user as any)?.id;
-      if (String(senderId) !== String(currentUserId)) {
-        setChats((current) => current.map((chat) =>
-          String(chat._id) === String(message.chat)
-            ? { ...chat, unreadCount: (chat.unreadCount || 0) + 1 }
-            : chat,
-        ));
-      }
+      setChats((current) => current.map((chat) => {
+        if (String(chat._id) !== String(message.chat)) return chat;
+        return {
+          ...chat,
+          lastMessage: { _id: message._id, text: message.text, createdAt: message.createdAt },
+          unreadCount: String(senderId) === String(currentUserId) ? chat.unreadCount : (chat.unreadCount || 0) + 1,
+        };
+      }));
     };
     const handleChatRead = ({ chatId }: { chatId: string | number }) => {
       setChats((current) => current.map((chat) =>
@@ -76,6 +79,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
     socket.on("chat-read", handleChatRead);
 
     return () => {
+      unsubscribeFocus();
       socket.off("online-users", handleOnlineUsers);
       socket.off("user-online", handleUserOnline);
       socket.off("user-offline", handleUserOffline);
@@ -87,7 +91,10 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const openChatWithUser = async (targetUser: User) => {
     try {
       const targetId = targetUser._id || (targetUser as any).id;
-      const chat = await apiCall<Chat>(`/chats/with/${targetId}`, { method: "POST" });
+      const chat = await apiCall<Chat & { isNew?: boolean }>(`/chats/with/${targetId}`, { method: "POST" });
+      if (chat.isNew) {
+        Alert.alert("Be careful", "This is your first conversation with this user. Do not share passwords, verification codes, or money.");
+      }
       const chatId = chat._id || (chat as any).id;
       navigation.navigate("ChatRoom", { chatId: chatId, participant: targetUser });
     } catch (err) {
@@ -106,11 +113,23 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 
       <View style={styles.storyRowWrap}>
         <Text style={styles.sectionTitle}>Other Users</Text>
+        <TextInput
+          value={userSearch}
+          onChangeText={setUserSearch}
+          placeholder="Search by name or Gmail"
+          placeholderTextColor={AppColors.placeholder}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={styles.userSearch}
+        />
         <FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.userListContent}
-          data={users}
+          data={users.filter((item) => {
+            const query = userSearch.trim().toLowerCase();
+            return !query || item.name.toLowerCase().includes(query) || item.email.toLowerCase().includes(query);
+          })}
           keyExtractor={(item, index) => {
             const key = item._id || (item as any).id;
             return key ? `user-${key}-${index}` : `user-idx-${index}`;
@@ -221,6 +240,15 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     marginLeft: 8,
     fontSize: 15,
+  },
+  userSearch: {
+    marginHorizontal: 4,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: AppColors.whiteSoft,
+    color: AppColors.inputText,
   },
   chatListTitle: {
     fontWeight: "700",

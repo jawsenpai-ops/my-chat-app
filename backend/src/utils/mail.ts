@@ -56,18 +56,3 @@ export function sendVerificationEmail(to: string, token: string) {
   );
 }
 
-export function sendVerificationCodeEmail(to: string, code: string) {
-  return sendMail(
-    to,
-    "Your email verification code",
-    `Your email verification code is ${code}. It expires in ${process.env.OTP_EXPIRATION_MINUTES || "10"} minutes.`,
-  );
-}
-
-export function sendPasswordResetEmail(to: string, token: string) {
-  return sendMail(
-    to,
-    "Reset your password",
-    `Reset your password by opening: ${appUrl}/reset-password?token=${encodeURIComponent(token)}`,
-  );
-}

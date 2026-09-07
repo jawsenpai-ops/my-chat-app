@@ -83,10 +83,12 @@ export async function getOrCreateChat(req: AuthRequest, res: Response, next: Nex
     );
 
     let chatId: number;
+    let isNew = false;
 
     if (existing.length > 0) {
       chatId = existing[0].chatId;
     } else {
+      isNew = true;
       const [newChat] = await db.query<ResultSetHeader>("INSERT INTO chats () VALUES ()");
       chatId = newChat.insertId;
 
@@ -112,6 +114,7 @@ export async function getOrCreateChat(req: AuthRequest, res: Response, next: Nex
       _id: chatRows[0]._id,
       participant: participantRows[0] || null,
       lastMessage: null,
+      isNew,
       lastMessageAt: chatRows[0].lastMessageAt,
       createdAt: chatRows[0].createdAt,
     });

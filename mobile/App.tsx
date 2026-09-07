@@ -9,12 +9,9 @@ import { ChatRoomScreen } from "./src/screens/ChatRoomScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { CropProfilePictureScreen } from "./src/screens/CropProfilePictureScreen";
 import { FreedomScreen } from "./src/screens/FreedomScreen";
-import { ForgotPasswordScreen } from "./src/screens/ForgotPasswordScreen";
-import { ResetPasswordScreen } from "./src/screens/ResetPasswordScreen";
 import { AdminDashboardScreen } from "./src/screens/AdminDashboardScreen";
+import { PixelHourglassLoader } from "./src/components/PixelHourglassLoader";
 import { RootStackParamList } from "./src/types";
-import { ActivityIndicator, View } from "react-native";
-import { AppColors } from "./src/theme/colors";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -23,11 +20,7 @@ const AppNavigator = () => {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: AppColors.background }}>
-        <ActivityIndicator size="large" color={AppColors.primaryDark} />
-      </View>
-    );
+    return <PixelHourglassLoader />;
   }
 
   return (
@@ -45,8 +38,6 @@ const AppNavigator = () => {
         <>
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
-          <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
-          <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
         </>
       )}
     </Stack.Navigator>
