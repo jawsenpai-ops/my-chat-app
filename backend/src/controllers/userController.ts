@@ -20,7 +20,7 @@ export async function getUsers(req: AuthRequest, res: Response, next: NextFuncti
 export async function getProfile(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const [users] = await db.query<RowDataPacket[]>(
-      "SELECT id AS _id, name, email, phone, avatar, bio, createdAt FROM users WHERE id = ? AND deleted_at IS NULL",
+      "SELECT id AS _id, name, email, phone, avatar, bio, role, createdAt FROM users WHERE id = ? AND deleted_at IS NULL",
       [req.userId]
     );
     if (users.length === 0) return res.status(404).json({ message: "User not found" });
