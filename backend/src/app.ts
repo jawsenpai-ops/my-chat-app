@@ -26,6 +26,9 @@ app.use(express.json({ limit: "3mb" }));
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", message: "Server is running" });
 });
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", message: "Server is running" });
+});
 
 app.use("/api/auth", authRoutes);
 app.use("/api/chats", chatRoutes);
