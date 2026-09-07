@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { RootStackParamList, User } from "../types";
@@ -18,6 +18,11 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
   const [bio, setBio] = useState(user?.bio || "");
   const [editingBio, setEditingBio] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
+  const [feedbackType, setFeedbackType] = useState("general");
+  const [feedbackSubject, setFeedbackSubject] = useState("");
+  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [sendingFeedback, setSendingFeedback] = useState(false);
 
   useEffect(() => {
     if (user) setProfile(user);
@@ -102,6 +107,25 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
     ]);
   };
 
+  const sendFeedback = async () => {
+    if (!feedbackSubject.trim() || !feedbackMessage.trim()) {
+      Alert.alert("Add more detail", "Enter a subject and describe your feedback.");
+      return;
+    }
+    setSendingFeedback(true);
+    try {
+      await apiCall("/feedback", { method: "POST", body: JSON.stringify({ type: feedbackType, subject: feedbackSubject, message: feedbackMessage }) });
+      setFeedbackVisible(false);
+      setFeedbackSubject("");
+      setFeedbackMessage("");
+      Alert.alert("Feedback sent", "Thanks for helping improve the app.");
+    } catch (error: any) {
+      Alert.alert("Could not send feedback", error.message);
+    } finally {
+      setSendingFeedback(false);
+    }
+  };
+
   const joinedDate = profile?.createdAt
     ? new Date(profile.createdAt).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })
     : "Not available";
@@ -174,11 +198,29 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
 
         <Text style={styles.avatarNote}>Profile picture</Text>
         <Text style={styles.helperText}>Your profile picture is shown to your contacts.</Text>
+        <TouchableOpacity onPress={() => setFeedbackVisible(true)} style={styles.feedbackButton}>
+          <Text style={styles.feedbackButtonText}>Send feedback</Text>
+        </TouchableOpacity>
+        {user?.role === "admin" && <TouchableOpacity onPress={() => navigation.navigate("AdminDashboard")} style={styles.adminButton}>
+          <Text style={styles.adminButtonText}>Open admin dashboard</Text>
+        </TouchableOpacity>}
       </ScrollView>
       <BottomTabBar
         onProfilePress={() => navigation.navigate("Profile")}
         onActionPress={() => navigation.navigate("Freedom")}
       />
+      <Modal visible={feedbackVisible} animationType="slide" transparent onRequestClose={() => setFeedbackVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.feedbackModal}>
+            <Text style={styles.modalTitle}>Send feedback</Text>
+            <Text style={styles.fieldLabel}>Type</Text>
+            <View style={styles.typeRow}>{["general", "bug", "feature", "problem"].map((type) => <TouchableOpacity key={type} onPress={() => setFeedbackType(type)} style={[styles.typeButton, feedbackType === type && styles.typeButtonSelected]}><Text style={[styles.typeText, feedbackType === type && styles.typeTextSelected]}>{type}</Text></TouchableOpacity>)}</View>
+            <TextInput value={feedbackSubject} onChangeText={setFeedbackSubject} placeholder="Subject" placeholderTextColor={AppColors.placeholder} style={styles.feedbackInput} maxLength={255} />
+            <TextInput value={feedbackMessage} onChangeText={setFeedbackMessage} placeholder="Tell us what happened or what you would like to see" placeholderTextColor={AppColors.placeholder} multiline style={[styles.feedbackInput, styles.feedbackMessage]} maxLength={5000} />
+            <View style={styles.feedbackActions}><TouchableOpacity onPress={() => setFeedbackVisible(false)}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity><TouchableOpacity onPress={sendFeedback} disabled={sendingFeedback} style={styles.saveButton}><Text style={styles.saveText}>{sendingFeedback ? "Sending..." : "Send"}</Text></TouchableOpacity></View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -214,4 +256,20 @@ const styles = StyleSheet.create({
   saveText: { color: AppColors.white, fontWeight: "700" },
   avatarNote: { color: AppColors.textMuted, fontSize: 12, fontWeight: "700", letterSpacing: 1, marginTop: 32 },
   helperText: { color: AppColors.textMuted, fontSize: 13, marginTop: 8 },
+  feedbackButton: { marginTop: 30, paddingVertical: 14, borderRadius: 12, backgroundColor: AppColors.buttonInner, alignItems: "center" },
+  feedbackButtonText: { color: AppColors.white, fontWeight: "700" },
+  adminButton: { marginTop: 12, paddingVertical: 14, borderRadius: 12, backgroundColor: AppColors.whiteSoft, alignItems: "center" },
+  adminButtonText: { color: AppColors.primaryDark, fontWeight: "700" },
+  modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.45)" },
+  feedbackModal: { backgroundColor: AppColors.background, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20 },
+  modalTitle: { color: AppColors.primaryDark, fontSize: 20, fontWeight: "700", marginBottom: 18 },
+  fieldLabel: { color: AppColors.textMuted, fontSize: 12, fontWeight: "700", marginBottom: 8 },
+  typeRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 },
+  typeButton: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: AppColors.whiteSoft },
+  typeButtonSelected: { backgroundColor: AppColors.buttonInner },
+  typeText: { color: AppColors.primaryDark, fontWeight: "600", textTransform: "capitalize" },
+  typeTextSelected: { color: AppColors.white },
+  feedbackInput: { backgroundColor: AppColors.white, color: AppColors.inputText, borderRadius: 12, padding: 13, marginBottom: 10 },
+  feedbackMessage: { minHeight: 120, textAlignVertical: "top" },
+  feedbackActions: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 18, marginTop: 8 },
 });
