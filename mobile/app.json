@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "my-chat-mobile",
+    "name": "Plasma",
     "slug": "my-chat-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -15,6 +15,10 @@
     },
     "android": {
       "package": "com.mychat.mobile",
+      "edgeToEdgeEnabled": false,
+      "statusBar": {
+        "hidden": true
+      },
       "adaptiveIcon": {
         "foregroundImage": "./assets/Plasma.jpg",
         "backgroundColor": "#ffffff"

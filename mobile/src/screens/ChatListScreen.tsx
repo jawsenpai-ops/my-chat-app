@@ -2,13 +2,14 @@ import React, { useEffect, useState } from "react";
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { RootStackParamList, Chat, User } from "../types";
+import { RootStackParamList, Chat, ChatRequest, User } from "../types";
 import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { getSocket } from "../api/socket";
 import { AppColors } from "../theme/colors";
 import { BottomTabBar } from "../components/BottomTabBar";
 import { AvatarWithStatus } from "../components/AvatarWithStatus";
+import { Modal } from "react-native";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ChatList">;
 
@@ -17,16 +18,20 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [userSearch, setUserSearch] = useState("");
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [requests, setRequests] = useState<ChatRequest[]>([]);
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
   const { logout, user } = useAuth();
   const socket = getSocket();
 
   const loadData = async () => {
     try {
-      const [chatData, userData] = await Promise.all([
+      const [chatData, userData, requestData] = await Promise.all([
         apiCall<Chat[]>("/chats"),
         apiCall<User[]>("/users"),
+        apiCall<ChatRequest[]>("/chat-requests"),
       ]);
       setChats(chatData);
+      setRequests(requestData);
 
       const currentUserId = user?._id || (user as any)?.id;
       const filteredUsers = userData.filter((u) => {
@@ -67,6 +72,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         };
       }));
     };
+    const handleNotification = () => { loadData(); };
     const handleChatRead = ({ chatId }: { chatId: string | number }) => {
       setChats((current) => current.map((chat) =>
         String(chat._id) === String(chatId) ? { ...chat, unreadCount: 0 } : chat,
@@ -77,6 +83,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
     socket.on("user-offline", handleUserOffline);
     socket.on("new-message", handleNewMessage);
     socket.on("chat-read", handleChatRead);
+    socket.on("notification", handleNotification);
 
     return () => {
       unsubscribeFocus();
@@ -85,29 +92,32 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
       socket.off("user-offline", handleUserOffline);
       socket.off("new-message", handleNewMessage);
       socket.off("chat-read", handleChatRead);
+      socket.off("notification", handleNotification);
     };
   }, []);
 
-  const openChatWithUser = async (targetUser: User) => {
+  const sendChatRequest = async (targetUser: User) => {
     try {
       const targetId = targetUser._id || (targetUser as any).id;
-      const chat = await apiCall<Chat & { isNew?: boolean }>(`/chats/with/${targetId}`, { method: "POST" });
-      if (chat.isNew) {
-        Alert.alert("Be careful", "This is your first conversation with this user. Do not share passwords, verification codes, or money.");
-      }
-      const chatId = chat._id || (chat as any).id;
-      navigation.navigate("ChatRoom", { chatId: chatId, participant: targetUser });
-    } catch (err) {
-      console.error(err);
+      await apiCall(`/chat-requests/with/${targetId}`, { method: "POST" });
+      Alert.alert("Request sent", `You asked ${targetUser.name} to connect.`);
+    } catch (err: any) {
+      Alert.alert("Could not send request", err.message);
     }
+  };
+
+  const respondToRequest = async (request: ChatRequest, action: "accept" | "reject") => {
+    try { await apiCall(`/chat-requests/${request._id}/respond`, { method: "POST", body: JSON.stringify({ action }) }); setRequests((current) => current.filter((item) => item._id !== request._id)); await loadData(); }
+    catch (error: any) { Alert.alert("Could not update request", error.message); }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <View style={styles.header}>
         <Text style={styles.headerText}>Chats ({user?.name})</Text>
-        <TouchableOpacity onPress={logout}>
-          <Text style={styles.logout}>Logout</Text>
+        <TouchableOpacity onPress={() => setNotificationsVisible(true)} style={styles.bellButton} accessibilityLabel="Notifications">
+          <Text style={styles.bell}>🔔</Text>
+          {requests.length > 0 && <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{requests.length > 9 ? "9+" : requests.length}</Text></View>}
         </TouchableOpacity>
       </View>
 
@@ -135,9 +145,10 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
             return key ? `user-${key}-${index}` : `user-idx-${index}`;
           }}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.userCircle} onPress={() => openChatWithUser(item)}>
+            <TouchableOpacity style={styles.userCircle} onPress={() => sendChatRequest(item)}>
               <AvatarWithStatus uri={item.avatar} size={42} online={onlineUserIds.has(String(item._id))} />
               <Text style={styles.userName} numberOfLines={1}>{item.name}</Text>
+              <Text style={styles.addLabel}>Add</Text>
             </TouchableOpacity>
           )}
         />
@@ -181,6 +192,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         onProfilePress={() => navigation.navigate("Profile")}
         onActionPress={() => navigation.navigate("Freedom")}
       />
+      <Modal visible={notificationsVisible} transparent animationType="slide" onRequestClose={() => setNotificationsVisible(false)}><View style={styles.modalBackdrop}><View style={styles.notificationModal}><View style={styles.notificationHeader}><Text style={styles.notificationTitle}>Notifications</Text><TouchableOpacity onPress={() => setNotificationsVisible(false)}><Text style={styles.closeNotification}>X</Text></TouchableOpacity></View>{requests.length === 0 ? <Text style={styles.emptyNotifications}>No new requests</Text> : requests.map((request) => <View key={String(request._id)} style={styles.requestRow}><AvatarWithStatus uri={request.sender.avatar} size={42} online={onlineUserIds.has(String(request.sender._id))} /><View style={styles.requestCopy}><Text style={styles.requestName}>{request.sender.name}</Text><Text style={styles.requestText}>wants to chat with you</Text></View><TouchableOpacity onPress={() => respondToRequest(request, "accept")} style={styles.acceptButton}><Text style={styles.acceptText}>Accept</Text></TouchableOpacity><TouchableOpacity onPress={() => respondToRequest(request, "reject")} style={styles.rejectButton}><Text style={styles.rejectText}>Reject</Text></TouchableOpacity></View>)}</View></View></Modal>
     </SafeAreaView>
   );
 };
@@ -208,6 +220,10 @@ const styles = StyleSheet.create({
     color: AppColors.primaryDark,
     fontWeight: "600",
   },
+  bellButton: { width: 42, height: 42, alignItems: "center", justifyContent: "center" },
+  bell: { fontSize: 22 },
+  notificationBadge: { position: "absolute", right: 0, top: 0, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, alignItems: "center", justifyContent: "center", backgroundColor: "#b42318" },
+  notificationBadgeText: { color: AppColors.white, fontSize: 10, fontWeight: "700" },
   storyRowWrap: {
     marginTop: 4,
     marginBottom: 6,
@@ -276,6 +292,21 @@ const styles = StyleSheet.create({
     textAlign: "center",
     maxWidth: 54,
   },
+  addLabel: { color: AppColors.buttonInner, fontSize: 10, fontWeight: "700", marginTop: 2 },
+  modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.45)" },
+  notificationModal: { backgroundColor: AppColors.background, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, maxHeight: "70%" },
+  notificationHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  notificationTitle: { color: AppColors.primaryDark, fontSize: 20, fontWeight: "700" },
+  closeNotification: { color: AppColors.textMuted, fontSize: 22, fontWeight: "700" },
+  emptyNotifications: { color: AppColors.textMuted, textAlign: "center", paddingVertical: 30 },
+  requestRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "rgba(20,42,68,0.1)" },
+  requestCopy: { flex: 1, marginHorizontal: 10 },
+  requestName: { color: AppColors.primaryDark, fontWeight: "700" },
+  requestText: { color: AppColors.textMuted, fontSize: 12, marginTop: 3 },
+  acceptButton: { backgroundColor: AppColors.buttonInner, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
+  acceptText: { color: AppColors.white, fontSize: 11, fontWeight: "700" },
+  rejectButton: { backgroundColor: AppColors.whiteSoft, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7, marginLeft: 5 },
+  rejectText: { color: "#b42318", fontSize: 11, fontWeight: "700" },
   unreadBadge: {
     minWidth: 24,
     height: 24,

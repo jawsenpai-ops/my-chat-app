@@ -14,8 +14,11 @@ type Props = NativeStackScreenProps<RootStackParamList, "Profile">;
 
 export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
   const { user, updateUser, logout } = useAuth();
-  const [profile, setProfile] = useState<User | null>(user);
-  const [bio, setBio] = useState(user?.bio || "");
+  const viewedUserId = route.params?.userId;
+  const isOwnProfile = !viewedUserId || String(viewedUserId) === String(user?._id);
+  const profileOnline = isOwnProfile || route.params?.online === true;
+  const [profile, setProfile] = useState<User | null>(isOwnProfile ? user : null);
+  const [bio, setBio] = useState(isOwnProfile ? user?.bio || "" : "");
   const [editingBio, setEditingBio] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedbackVisible, setFeedbackVisible] = useState(false);
@@ -25,13 +28,20 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
   const [sendingFeedback, setSendingFeedback] = useState(false);
 
   useEffect(() => {
-    if (user) setProfile(user);
-  }, [user]);
+    if (isOwnProfile && user) {
+      setProfile(user);
+      setBio(user.bio || "");
+    } else if (!isOwnProfile) {
+      setProfile(null);
+      setBio("");
+      setEditingBio(false);
+    }
+  }, [isOwnProfile, user]);
 
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const targetId = route.params?.userId;
+        const targetId = viewedUserId;
         const freshProfile = await apiCall<User>(targetId ? `/users/${targetId}` : "/users/me");
         setProfile(freshProfile);
         setBio(freshProfile.bio || "");
@@ -41,7 +51,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
       }
     };
     loadProfile();
-  }, [route.params?.userId]);
+  }, [viewedUserId]);
 
   const saveBio = async () => {
     setSaving(true);
@@ -138,14 +148,14 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity onPress={showMoreOptions} style={styles.headerButton} accessibilityLabel="More options">
+        {isOwnProfile ? <TouchableOpacity onPress={showMoreOptions} style={styles.headerButton} accessibilityLabel="More options">
           <Text style={styles.moreIcon}>⋮</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> : <View style={styles.headerButton} />}
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.profileIntro}>
-          <AvatarWithStatus uri={profile?.avatar} size={104} online />
+          <AvatarWithStatus uri={profile?.avatar} size={104} online={profileOnline} />
           <Text style={styles.name}>{profile?.name || "User"}</Text>
           <Text style={styles.email}>{profile?.email}</Text>
         </View>
@@ -161,7 +171,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
         <View style={styles.bioSection}>
           <View style={styles.bioHeading}>
             <Text style={styles.sectionLabel}>BIO</Text>
-            {!editingBio && (
+            {isOwnProfile && !editingBio && (
               <TouchableOpacity onPress={() => setEditingBio(true)}>
                 <Text style={styles.actionText}>Edit</Text>
               </TouchableOpacity>
@@ -189,7 +199,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
               </View>
             </>
           ) : (
-            <TouchableOpacity onPress={() => setEditingBio(true)} style={styles.bioDisplay}>
+            <TouchableOpacity disabled={!isOwnProfile} onPress={() => setEditingBio(true)} style={styles.bioDisplay}>
               <Text style={bio ? styles.bioText : styles.emptyBioText}>
                 {bio || "Add a bio"}
               </Text>
@@ -197,12 +207,12 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
           )}
         </View>
 
-        <Text style={styles.avatarNote}>Profile picture</Text>
+        {isOwnProfile && <><Text style={styles.avatarNote}>Profile picture</Text>
         <Text style={styles.helperText}>Your profile picture is shown to your contacts.</Text>
         <TouchableOpacity onPress={() => setFeedbackVisible(true)} style={styles.feedbackButton}>
           <Text style={styles.feedbackButtonText}>Send feedback</Text>
-        </TouchableOpacity>
-        {user?.role === "admin" && <TouchableOpacity onPress={() => navigation.navigate("AdminDashboard")} style={styles.adminButton}>
+        </TouchableOpacity></>}
+        {isOwnProfile && user?.role === "admin" && <TouchableOpacity onPress={() => navigation.navigate("AdminDashboard")} style={styles.adminButton}>
           <Text style={styles.adminButtonText}>Open admin dashboard</Text>
         </TouchableOpacity>}
       </ScrollView>

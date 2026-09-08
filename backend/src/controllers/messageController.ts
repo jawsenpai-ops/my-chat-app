@@ -34,6 +34,9 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
         m.text,
         m.createdAt,
         m.pinned_at AS pinnedAt,
+        m.reply_to_id AS replyToId,
+        replied.text AS replyText,
+        replyUser.name AS replySenderName,
         m.chatId AS chat,
         u.id AS sender_id,
         u.name AS sender_name,
@@ -41,6 +44,8 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
         u.avatar AS sender_avatar
       FROM messages m
       JOIN users u ON m.senderId = u.id
+      LEFT JOIN messages replied ON replied.id = m.reply_to_id
+      LEFT JOIN users replyUser ON replyUser.id = replied.senderId
       WHERE m.chatId = ? AND m.deleted_at IS NULL
       ORDER BY m.createdAt ASC
     `;
@@ -53,6 +58,7 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
       text: decryptText(row.text), // DB က ရလာတဲ့ Encrypted Text ကို Decrypt ပြန်လုပ်ပေးခြင်း
       createdAt: row.createdAt,
       pinned: Boolean(row.pinnedAt),
+      replyTo: row.replyToId ? { _id: row.replyToId, text: decryptText(row.replyText), senderName: row.replySenderName } : null,
       sender: {
         _id: row.sender_id,
         name: row.sender_name,

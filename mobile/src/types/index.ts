@@ -16,6 +16,7 @@ export interface Message {
   displayText?: string;
   createdAt: string;
   pinned?: boolean;
+  replyTo?: { _id: number | string; text: string; senderName: string } | null;
   sender: {
     _id: number | string;
     name: string;
@@ -35,6 +36,13 @@ export interface Chat {
   createdAt: string;
   unreadCount?: number;
   isNew?: boolean;
+}
+
+export interface ChatRequest {
+  _id: number | string;
+  status: "pending" | "accepted" | "rejected";
+  createdAt: string;
+  sender: User;
 }
 
 export interface Post {
@@ -64,7 +72,7 @@ export type RootStackParamList = {
   Register: undefined;
   ChatList: undefined;
   ChatRoom: { chatId: string | number; participant: User };
-  Profile: { userId?: number | string } | undefined;
+  Profile: { userId?: number | string; online?: boolean } | undefined;
   Freedom: { openComposer?: boolean } | undefined;
   CropProfilePicture: { uri: string; width: number; height: number };
   AdminDashboard: undefined;

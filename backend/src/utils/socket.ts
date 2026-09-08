@@ -3,7 +3,7 @@ import { Server as HttpServer } from "http";
 import jwt from "jsonwebtoken";
 import { db } from "../config/database";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
-import { encryptText } from "./crypto"; // 👈 ၁။ encryptText Import ထည့်ထားပါသည်
+import { decryptText, encryptText } from "./crypto"; // 👈 ၁။ encryptText Import ထည့်ထားပါသည်
 import { rateLimitStore } from "../middleware/rateLimit";
 
 export const onlineUsers: Map<string, string> = new Map();
@@ -133,7 +133,7 @@ export const initializeSocket = (httpServer: HttpServer) => {
       }
     });
 
-    socket.on("send-message", async (data: { chatId: string; text: string }) => {
+    socket.on("send-message", async (data: { chatId: string; text: string; replyToId?: string | number | null }) => {
       if (!consumeSocketLimit(socket, userId, "send-message", 30, 60_000)) return;
       try {
         if (
@@ -150,6 +150,7 @@ export const initializeSocket = (httpServer: HttpServer) => {
         }
 
         const { chatId, text } = data;
+        const replyToId = data.replyToId ? Number(data.replyToId) : null;
 
         const [chatAccess] = await db.query<RowDataPacket[]>(
           "SELECT chatId FROM chat_participants WHERE chatId = ? AND userId = ?",
@@ -161,12 +162,28 @@ export const initializeSocket = (httpServer: HttpServer) => {
           return;
         }
 
+        const [blockedRequests] = await db.query<RowDataPacket[]>(
+          `SELECT r.id FROM chat_requests r
+           JOIN chat_participants other ON other.chatId = ? AND other.userId != ?
+           WHERE r.sender_id = ? AND r.recipient_id = other.userId AND r.status = 'rejected' AND r.blocked_until > NOW()`,
+          [chatId, userId, userId],
+        );
+        if (blockedRequests.length > 0) { socket.emit("socket-error", { message: "You cannot message this user for one hour." }); return; }
+
+        if (replyToId !== null) {
+          const [replyAccess] = await db.query<RowDataPacket[]>(
+            "SELECT m.id FROM messages m JOIN chat_participants cp ON cp.chatId = m.chatId AND cp.userId = ? WHERE m.id = ? AND m.chatId = ? AND m.deleted_at IS NULL",
+            [userId, replyToId, chatId],
+          );
+          if (replyAccess.length === 0) { socket.emit("socket-error", { message: "Reply message not found" }); return; }
+        }
+
         // 👈 ၂။ DB ထဲ မသိမ်းမီ Plain text ကို Encrypt လုပ်ပါသည်
         const encryptedText = encryptText(text);
 
         const [msgResult] = await db.query<ResultSetHeader>(
-          "INSERT INTO messages (chatId, senderId, text) VALUES (?, ?, ?)",
-          [chatId, userId, encryptedText] // 👈 Encrypted text ကို DB ထဲ သို့ ထည့်သည်
+          "INSERT INTO messages (chatId, senderId, reply_to_id, text) VALUES (?, ?, ?, ?)",
+          [chatId, userId, replyToId, encryptedText] // 👈 Encrypted text ကို DB ထဲ သို့ ထည့်သည်
         );
 
         const messageId = msgResult.insertId;
@@ -182,12 +199,18 @@ export const initializeSocket = (httpServer: HttpServer) => {
         );
 
         // 👈 ၃။ Socket မှတစ်ဆင့် Mobile App များကို ပို့သည့်အခါ Screen ပေါ်ချက်ချင်းပေါ်စေရန် Plain text တိုင်း ပို့ပေးပါသည်
+        let replyTo = null;
+        if (replyToId !== null) {
+          const [replyRows] = await db.query<RowDataPacket[]>("SELECT m.id, m.text, u.name AS senderName FROM messages m JOIN users u ON u.id = m.senderId WHERE m.id = ?", [replyToId]);
+          if (replyRows.length > 0) replyTo = { _id: replyRows[0].id, text: decryptText(replyRows[0].text), senderName: replyRows[0].senderName };
+        }
         const formattedMessage = {
           _id: messageId,
           chat: chatId,
           text: text, 
           sender: sender[0],
           createdAt: new Date().toISOString(),
+          replyTo,
         };
 
         io.to(`chat:${chatId}`).emit("new-message", formattedMessage);
