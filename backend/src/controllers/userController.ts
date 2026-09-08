@@ -56,3 +56,16 @@ export async function updateProfile(req: AuthRequest, res: Response, next: NextF
     return next(error);
   }
 }
+
+export async function getPublicProfile(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const userId = Number(req.params.userId);
+    if (!Number.isSafeInteger(userId) || userId < 1) return res.status(400).json({ message: "Invalid user ID" });
+    const [users] = await db.query<RowDataPacket[]>(
+      "SELECT id AS _id, name, email, avatar, bio, role, createdAt FROM users WHERE id = ? AND deleted_at IS NULL",
+      [userId],
+    );
+    if (users.length === 0) return res.status(404).json({ message: "User not found" });
+    return res.json(users[0]);
+  } catch (error) { return next(error); }
+}

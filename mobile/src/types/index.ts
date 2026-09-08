@@ -15,6 +15,7 @@ export interface Message {
   text: string;
   displayText?: string;
   createdAt: string;
+  pinned?: boolean;
   sender: {
     _id: number | string;
     name: string;
@@ -40,6 +41,7 @@ export interface Post {
   _id: number | string;
   body: string;
   imageUrl?: string | null;
+  imageUrls?: string[];
   createdAt: string;
   updatedAt?: string;
   author: User;
@@ -52,6 +54,7 @@ export interface Post {
 export interface PostComment {
   _id: number | string;
   body: string;
+  parentCommentId?: number | string | null;
   createdAt: string;
   author: Pick<User, "_id" | "name" | "avatar">;
 }
@@ -61,7 +64,7 @@ export type RootStackParamList = {
   Register: undefined;
   ChatList: undefined;
   ChatRoom: { chatId: string | number; participant: User };
-  Profile: undefined;
+  Profile: { userId?: number | string } | undefined;
   Freedom: { openComposer?: boolean } | undefined;
   CropProfilePicture: { uri: string; width: number; height: number };
   AdminDashboard: undefined;

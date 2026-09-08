@@ -1,0 +1,1 @@
+ALTER TABLE posts ADD COLUMN image_urls LONGTEXT NULL AFTER image_url;

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Dimensions, FlatList, Image, Modal, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import * as ImagePicker from "expo-image-picker";
+import { Alert, Dimensions, FlatList, Image, Modal, RefreshControl, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { apiCall } from "../api/client";
@@ -8,6 +7,7 @@ import { getSocket } from "../api/socket";
 import { useAuth } from "../context/AuthContext";
 import { AppColors } from "../theme/colors";
 import { BottomTabBar } from "../components/BottomTabBar";
+import { CreatePostComposer, SelectedImage } from "../components/CreatePostComposer";
 import { Post, PostComment, RootStackParamList, User } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Freedom">;
@@ -20,19 +20,22 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   const [composerVisible, setComposerVisible] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [body, setBody] = useState("");
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [images, setImages] = useState<SelectedImage[]>([]);
   const [menuPost, setMenuPost] = useState<Post | null>(null);
   const [commentsFor, setCommentsFor] = useState<string | null>(null);
   const [comments, setComments] = useState<PostComment[]>([]);
   const [commentText, setCommentText] = useState("");
+  const [replyTo, setReplyTo] = useState<string | null>(null);
   const [sharePost, setSharePost] = useState<Post | null>(null);
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [imageRatios, setImageRatios] = useState<Record<string, number>>({});
+  const [refreshing, setRefreshing] = useState(false);
   const socket = getSocket();
 
   const loadPosts = async () => {
     try { setPosts(await apiCall<Post[]>("/posts")); } catch (error: any) { Alert.alert("Could not load posts", error.message); }
   };
+  const refresh = async () => { setRefreshing(true); await loadPosts(); setRefreshing(false); };
 
   useEffect(() => {
     loadPosts();
@@ -41,6 +44,7 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
     socket.on("online-users", online);
     return () => { socket.off("online-users", online); };
   }, []);
+  useEffect(() => { const handleNotification = (notification: { message: string }) => Alert.alert("New activity", notification.message); socket.on("notification", handleNotification); return () => { socket.off("notification", handleNotification); }; }, []);
 
   useEffect(() => {
     posts.forEach((post) => {
@@ -58,19 +62,15 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   const openComposer = (post?: Post) => {
     setEditingPost(post || null);
     setBody(post?.body || "");
-    setImageUrl(post?.imageUrl || null);
+    const urls = post?.imageUrls?.length ? post.imageUrls : post?.imageUrl ? [post.imageUrl] : [];
+    setImages(urls.map((uri) => ({ uri, width: 1, height: 1 })));
     setComposerVisible(true);
   };
 
-  const chooseImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.7, base64: true });
-    if (!result.canceled && result.assets[0].base64 && result.assets[0].mimeType) setImageUrl(`data:${result.assets[0].mimeType};base64,${result.assets[0].base64}`);
-  };
-
   const savePost = async () => {
-    if (!body.trim() && !imageUrl) return Alert.alert("Add something", "Write a post or choose an image first.");
+    if (!body.trim() && images.length === 0) return Alert.alert("Add something", "Write a post or choose an image first.");
     try {
-      const options = { method: editingPost ? "PATCH" : "POST", body: JSON.stringify({ body, imageUrl }) };
+      const options = { method: editingPost ? "PATCH" : "POST", body: JSON.stringify({ body, imageUrls: images.map((image) => image.uri) }) };
       await apiCall(editingPost ? `/posts/${editingPost._id}` : "/posts", options);
       setComposerVisible(false);
       await loadPosts();
@@ -104,8 +104,8 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   const addComment = async (post: Post) => {
     if (!commentText.trim()) return;
     try {
-      await apiCall(`/posts/${post._id}/comments`, { method: "POST", body: JSON.stringify({ body: commentText }) });
-      setCommentText("");
+      await apiCall(`/posts/${post._id}/comments`, { method: "POST", body: JSON.stringify({ body: commentText, parentCommentId: replyTo }) });
+      setCommentText(""); setReplyTo(null);
       setComments(await apiCall<PostComment[]>(`/posts/${post._id}/comments`));
       setPosts((current) => current.map((item) => item._id === post._id ? { ...item, commentCount: item.commentCount + 1 } : item));
     } catch (error: any) { Alert.alert("Could not add comment", error.message); }
@@ -129,22 +129,22 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
         <TouchableOpacity onPress={() => setMenuPost(item)}><Text style={styles.more}>...</Text></TouchableOpacity>
       </View>
       {!!item.body && <Text style={styles.postBody}>{item.body}</Text>}
-      {!!item.imageUrl && <TouchableOpacity onPress={() => setFullScreenImage(item.imageUrl || null)} activeOpacity={0.9}><Image source={{ uri: item.imageUrl }} style={[styles.postImage, { aspectRatio: imageRatios[String(item._id)] || 1 }]} resizeMode="contain" /></TouchableOpacity>}
+      {(item.imageUrls?.length || item.imageUrl) ? <FlatList horizontal pagingEnabled showsHorizontalScrollIndicator={false} data={item.imageUrls?.length ? item.imageUrls : [item.imageUrl as string]} keyExtractor={(_, index) => `${item._id}-${index}`} renderItem={({ item: uri }) => <TouchableOpacity onPress={() => setFullScreenImage(uri)} activeOpacity={0.9}><Image source={{ uri }} style={{ width: Dimensions.get("window").width - 56, height: 300, borderRadius: 12, marginTop: 12, backgroundColor: AppColors.whiteSoft }} resizeMode="contain" /></TouchableOpacity>} /> : null}
       <View style={styles.actionRow}><TouchableOpacity onPress={() => toggleLike(item)}><Text style={[styles.actionText, item.likedByMe && styles.liked]}>{item.likedByMe ? "Unlike" : "Like"} · {item.likeCount}</Text></TouchableOpacity><TouchableOpacity onPress={() => showComments(item)}><Text style={styles.actionText}>Comment · {item.commentCount}</Text></TouchableOpacity></View>
-      {commentsFor === String(item._id) && <View style={styles.comments}>{comments.map((comment) => <View key={String(comment._id)} style={styles.comment}><Image source={{ uri: comment.author.avatar }} style={styles.commentAvatar} /><Text style={styles.commentText}><Text style={styles.commentName}>{comment.author.name}: </Text>{comment.body}</Text></View>)}<View style={styles.commentComposer}><TextInput value={commentText} onChangeText={setCommentText} placeholder="Write a comment..." placeholderTextColor={AppColors.placeholder} style={styles.commentInput} /><TouchableOpacity onPress={() => addComment(item)}><Text style={styles.postLink}>Post</Text></TouchableOpacity></View></View>}
+      {commentsFor === String(item._id) && <View style={styles.comments}>{comments.slice(0, 4).map((comment) => <View key={String(comment._id)} style={[styles.comment, Boolean(comment.parentCommentId) && styles.reply]}><Image source={{ uri: comment.author.avatar }} style={styles.commentAvatar} /><View style={styles.commentText}><Text><Text style={styles.commentName}>{comment.author.name}: </Text>{comment.body}</Text><TouchableOpacity onPress={() => setReplyTo(String(comment._id))}><Text style={styles.replyLink}>Reply</Text></TouchableOpacity></View></View>)}<View style={styles.commentComposer}><TextInput value={commentText} onChangeText={setCommentText} placeholder={replyTo ? "Reply to comment..." : "Write a comment..."} placeholderTextColor={AppColors.placeholder} style={styles.commentInput} /><TouchableOpacity onPress={() => addComment(item)}><Text style={styles.postLink}>Post</Text></TouchableOpacity></View></View>}
     </View>;
   };
 
   return <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
     <View style={styles.header}><TouchableOpacity onPress={() => navigation.goBack()}><Text style={styles.back}>‹</Text></TouchableOpacity><Text style={styles.title}>Posts</Text><TouchableOpacity onPress={() => openComposer()}><Text style={styles.headerPlus}>+</Text></TouchableOpacity></View>
-    <FlatList data={posts} renderItem={renderPost} keyExtractor={(item) => String(item._id)} contentContainerStyle={styles.feed} ListEmptyComponent={<Text style={styles.empty}>No posts yet. Start the conversation.</Text>} />
+    <FlatList data={posts} renderItem={renderPost} keyExtractor={(item) => String(item._id)} contentContainerStyle={styles.feed} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />} ListHeaderComponent={<TouchableOpacity onPress={() => openComposer()} style={{ flexDirection: "row", alignItems: "center", backgroundColor: AppColors.surface, borderRadius: 14, padding: 12, marginBottom: 12 }}><Image source={{ uri: user?.avatar }} style={{ width: 36, height: 36, borderRadius: 18, marginRight: 10 }} /><Text style={{ flex: 1, color: AppColors.textMuted }}>What's on your mind?</Text><Text style={{ color: AppColors.buttonInner, fontSize: 24, fontWeight: "700" }}>+</Text></TouchableOpacity>} ListEmptyComponent={<Text style={styles.empty}>No posts yet. Start the conversation.</Text>} />
     <BottomTabBar
       showCreate
       onCreatePress={() => openComposer()}
       onProfilePress={() => navigation.navigate("Profile")}
       onActionPress={() => undefined}
     />
-    <Modal visible={composerVisible} animationType="slide" transparent onRequestClose={() => setComposerVisible(false)}><View style={styles.modalBackdrop}><View style={styles.composer}><Text style={styles.modalTitle}>{editingPost ? "Edit Post" : "Create Post"}</Text><View style={styles.authorWrap}><Image source={{ uri: user?.avatar }} style={styles.avatar} /><View><Text style={styles.authorName}>{user?.name}</Text><Text style={styles.meta}>Online</Text></View></View><TextInput value={body} onChangeText={setBody} multiline placeholder="What's on your mind?" placeholderTextColor={AppColors.placeholder} style={styles.postInput} />{imageUrl && <Image source={{ uri: imageUrl }} style={styles.preview} resizeMode="cover" />}<View style={styles.modalActions}><TouchableOpacity onPress={chooseImage} style={styles.secondaryButton}><Text style={styles.secondaryText}>Add Photo</Text></TouchableOpacity><TouchableOpacity onPress={() => setComposerVisible(false)}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity><TouchableOpacity onPress={savePost} style={styles.primaryButton}><Text style={styles.primaryText}>{editingPost ? "Save Changes" : "Post"}</Text></TouchableOpacity></View></View></View></Modal>
+    <Modal visible={composerVisible} animationType="slide" transparent onRequestClose={() => setComposerVisible(false)}><View style={styles.modalBackdrop}><CreatePostComposer body={body} images={images} onBodyChange={setBody} onImagesChange={setImages} onSubmit={savePost} onCancel={() => setComposerVisible(false)} submitLabel={editingPost ? "Save Changes" : "Post"} authorName={user?.name} authorAvatar={user?.avatar} /></View></Modal>
     <Modal visible={!!menuPost} animationType="fade" transparent onRequestClose={() => setMenuPost(null)}><View style={styles.modalBackdrop}><View style={styles.menu}><TouchableOpacity onPress={() => { setMenuPost(null); Share.share({ message: `https://ikiyadm.com/posts/${menuPost?._id}` }); }}><Text style={styles.menuItem}>Copy link</Text></TouchableOpacity><TouchableOpacity onPress={() => { setSharePost(menuPost); setMenuPost(null); }}><Text style={styles.menuItem}>Send to my friend</Text></TouchableOpacity>{menuPost?.isOwner && <><TouchableOpacity onPress={() => { const post = menuPost; setMenuPost(null); openComposer(post); }}><Text style={styles.menuItem}>Edit post</Text></TouchableOpacity><TouchableOpacity onPress={() => deletePost(menuPost)}><Text style={[styles.menuItem, styles.danger]}>Delete post</Text></TouchableOpacity></>}</View></View></Modal>
     <Modal visible={!!sharePost} animationType="slide" transparent onRequestClose={() => setSharePost(null)}><View style={styles.modalBackdrop}><View style={styles.menu}><Text style={styles.modalTitle}>Send to my friend</Text>{users.map((friend) => <TouchableOpacity key={String(friend._id)} onPress={() => shareToFriend(friend)} style={styles.friend}><Image source={{ uri: friend.avatar }} style={styles.commentAvatar} /><Text style={styles.menuItem}>{friend.name}</Text></TouchableOpacity>)}<TouchableOpacity onPress={() => setSharePost(null)}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity></View></View></Modal>
     <Modal visible={!!fullScreenImage} animationType="fade" onRequestClose={() => setFullScreenImage(null)}><View style={styles.fullScreen}><TouchableOpacity onPress={() => setFullScreenImage(null)} style={styles.closeImage}><Text style={styles.closeImageText}>Close</Text></TouchableOpacity>{fullScreenImage && <Image source={{ uri: fullScreenImage }} style={styles.fullScreenImage} resizeMode="contain" />}</View></Modal>
@@ -152,7 +152,7 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: AppColors.background },
+  container: { flex: 1, backgroundColor: AppColors.background }, reply: { marginLeft: 36 }, replyLink: { color: AppColors.buttonInner, fontSize: 11, fontWeight: "700", marginTop: 3 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 10, backgroundColor: AppColors.primaryDark },
   back: { color: AppColors.white, fontSize: 38, lineHeight: 38 }, title: { color: AppColors.white, fontSize: 20, fontWeight: "700" }, headerPlus: { color: AppColors.white, fontSize: 28 },
   feed: { padding: 12, paddingBottom: 30 }, postCard: { backgroundColor: AppColors.surface, borderRadius: 16, marginBottom: 12, padding: 14 }, postHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, authorWrap: { flexDirection: "row", alignItems: "center", flex: 1 }, avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: AppColors.whiteSoft, marginRight: 10 }, onlineDot: { position: "absolute", right: 6, bottom: 1, width: 11, height: 11, borderRadius: 6, backgroundColor: AppColors.success, borderWidth: 2, borderColor: AppColors.surface }, authorName: { color: AppColors.primaryDark, fontWeight: "700" }, meta: { color: AppColors.textMuted, fontSize: 11, marginTop: 3 }, more: { color: AppColors.primaryDark, fontSize: 22, fontWeight: "700", paddingHorizontal: 8 }, postBody: { color: AppColors.text, fontSize: 15, lineHeight: 22, marginTop: 14 }, postImage: { width: "100%", borderRadius: 12, marginTop: 12, backgroundColor: AppColors.whiteSoft }, actionRow: { flexDirection: "row", borderTopWidth: 1, borderTopColor: "rgba(20,42,68,0.08)", marginTop: 14, paddingTop: 12, gap: 22 }, actionText: { color: AppColors.primaryDark, fontWeight: "600", fontSize: 13 }, liked: { color: AppColors.buttonInner }, comments: { marginTop: 12 }, comment: { flexDirection: "row", alignItems: "center", marginBottom: 8 }, commentAvatar: { width: 28, height: 28, borderRadius: 14, marginRight: 8 }, commentText: { flex: 1, color: AppColors.text, fontSize: 13 }, commentName: { fontWeight: "700" }, commentComposer: { flexDirection: "row", alignItems: "center", marginTop: 6 }, commentInput: { flex: 1, height: 38, backgroundColor: AppColors.white, borderRadius: 18, paddingHorizontal: 12, color: AppColors.inputText }, postLink: { color: AppColors.buttonInner, fontWeight: "700", marginLeft: 10 }, empty: { color: AppColors.textMuted, textAlign: "center", marginTop: 50 },

@@ -33,6 +33,7 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
         m.id AS _id,
         m.text,
         m.createdAt,
+        m.pinned_at AS pinnedAt,
         m.chatId AS chat,
         u.id AS sender_id,
         u.name AS sender_name,
@@ -51,6 +52,7 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
       chat: row.chat,
       text: decryptText(row.text), // DB က ရလာတဲ့ Encrypted Text ကို Decrypt ပြန်လုပ်ပေးခြင်း
       createdAt: row.createdAt,
+      pinned: Boolean(row.pinnedAt),
       sender: {
         _id: row.sender_id,
         name: row.sender_name,
@@ -82,4 +84,19 @@ export async function deleteMessage(req: AuthRequest, res: Response, next: NextF
   } catch (error) {
     return next(error);
   }
+}
+
+export async function togglePinMessage(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const messageId = Number(req.params.messageId);
+    const [messages] = await db.query<RowDataPacket[]>(
+      `SELECT m.id, m.chatId, m.pinned_at FROM messages m
+       JOIN chat_participants cp ON cp.chatId = m.chatId AND cp.userId = ?
+       WHERE m.id = ? AND m.deleted_at IS NULL`, [req.userId, messageId],
+    );
+    if (messages.length === 0) return res.status(404).json({ message: "Message not found" });
+    const pinned = !messages[0].pinned_at;
+    await db.query("UPDATE messages SET pinned_at = ? WHERE id = ?", [pinned ? new Date() : null, messageId]);
+    return res.json({ pinned });
+  } catch (error) { return next(error); }
 }

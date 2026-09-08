@@ -7,6 +7,10 @@ import { encryptText } from "./crypto"; // 👈 ၁။ encryptText Import ထည
 import { rateLimitStore } from "../middleware/rateLimit";
 
 export const onlineUsers: Map<string, string> = new Map();
+let socketIo: SocketServer | null = null;
+export const notifyUser = (userId: number | string, payload: { type: string; message: string; postId?: number }) => {
+  socketIo?.to(`user:${userId}`).emit("notification", payload);
+};
 
 const SOCKET_ERROR_MESSAGE = "Too many requests. Please try again later.";
 
@@ -30,6 +34,7 @@ const consumeSocketLimit = (
 
 export const initializeSocket = (httpServer: HttpServer) => {
   const io = new SocketServer(httpServer, { cors: { origin: "*" } });
+  socketIo = io;
 
   io.use(async (socket, next) => {
     const connectionLimit = rateLimitStore.consume(

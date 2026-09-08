@@ -95,6 +95,14 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
     ]);
   };
 
+  const togglePin = async (message: Message) => {
+    const messageId = message._id || (message as any).id;
+    try {
+      const result = await apiCall<{ pinned: boolean }>(`/messages/${messageId}/pin`, { method: "POST" });
+      setMessages((current) => current.map((item) => item === message ? { ...item, pinned: result.pinned } : item));
+    } catch (error: any) { Alert.alert("Could not update pin", error.message); }
+  };
+
   return (
     <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
       <KeyboardAvoidingView
@@ -120,8 +128,9 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
             const isMe = String(senderId) === String(currentUserId);
 
             return (
-              <TouchableOpacity onLongPress={() => isMe && deleteMessage(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}>
+              <TouchableOpacity onPress={() => togglePin(item)} onLongPress={() => isMe && deleteMessage(item)} style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble, item.pinned && styles.pinnedBubble]}>
                 <Text style={isMe ? styles.myText : styles.otherText}>{item.displayText ?? item.text}</Text>
+                {item.pinned && <Text style={isMe ? styles.pinMyText : styles.pinText}>Pinned</Text>}
               </TouchableOpacity>
             );
           }}
@@ -189,6 +198,9 @@ const styles = StyleSheet.create({
   otherText: {
     color: AppColors.text,
   },
+  pinnedBubble: { borderWidth: 2, borderColor: AppColors.buttonInner },
+  pinText: { color: AppColors.buttonInner, fontSize: 10, marginTop: 4, fontWeight: "700" },
+  pinMyText: { color: AppColors.white, fontSize: 10, marginTop: 4, fontWeight: "700" },
   inputContainer: {
     flexDirection: "row",
     padding: 12,

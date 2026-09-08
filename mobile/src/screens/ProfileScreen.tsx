@@ -12,7 +12,7 @@ import { AvatarWithStatus } from "../components/AvatarWithStatus";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Profile">;
 
-export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
+export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
   const { user, updateUser, logout } = useAuth();
   const [profile, setProfile] = useState<User | null>(user);
   const [bio, setBio] = useState(user?.bio || "");
@@ -31,16 +31,17 @@ export const ProfileScreen: React.FC<Props> = ({ navigation }) => {
   useEffect(() => {
     const loadProfile = async () => {
       try {
-        const freshProfile = await apiCall<User>("/users/me");
+        const targetId = route.params?.userId;
+        const freshProfile = await apiCall<User>(targetId ? `/users/${targetId}` : "/users/me");
         setProfile(freshProfile);
         setBio(freshProfile.bio || "");
-        updateUser(freshProfile);
+        if (!targetId) updateUser(freshProfile);
       } catch (error: any) {
         Alert.alert("Profile unavailable", error.message);
       }
     };
     loadProfile();
-  }, []);
+  }, [route.params?.userId]);
 
   const saveBio = async () => {
     setSaving(true);

@@ -21,7 +21,7 @@ app.use(cors({
   credentials: allowedOrigins.length > 0,
 }));
 app.use("/api", apiRateLimiter);
-app.use(express.json({ limit: "3mb" }));
+app.use(express.json({ limit: "60mb" }));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", message: "Server is running" });
