@@ -3,12 +3,13 @@ import * as ImagePicker from "expo-image-picker";
 import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { RootStackParamList, User } from "../types";
+import { FriendRelationship, FriendStatus, RootStackParamList, User } from "../types";
 import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { AppColors } from "../theme/colors";
 import { BottomTabBar } from "../components/BottomTabBar";
 import { AvatarWithStatus } from "../components/AvatarWithStatus";
+import { getSocket } from "../api/socket";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Profile">;
 
@@ -26,6 +27,9 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
   const [feedbackSubject, setFeedbackSubject] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [sendingFeedback, setSendingFeedback] = useState(false);
+  const [friendRelationship, setFriendRelationship] = useState<FriendRelationship>({ status: "none" });
+  const [friendLoading, setFriendLoading] = useState(false);
+  const friendSocket = getSocket();
 
   useEffect(() => {
     if (isOwnProfile && user) {
@@ -52,6 +56,33 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
     };
     loadProfile();
   }, [viewedUserId]);
+
+  useEffect(() => {
+    if (isOwnProfile || !viewedUserId) return;
+    const loadFriendStatus = async () => {
+      try { setFriendRelationship(await apiCall<FriendRelationship>(`/friends/status/${viewedUserId}`)); } catch { setFriendRelationship({ status: "none" }); }
+    };
+    loadFriendStatus();
+    const sync = () => loadFriendStatus();
+    friendSocket.on("friend-request-accepted", sync);
+    friendSocket.on("friend-request-received", sync);
+    friendSocket.on("friend-request-declined", sync);
+    friendSocket.on("friend-request-cancelled", sync);
+    return () => { friendSocket.off("friend-request-received", sync); friendSocket.off("friend-request-accepted", sync); friendSocket.off("friend-request-declined", sync); friendSocket.off("friend-request-cancelled", sync); };
+  }, [isOwnProfile, viewedUserId]);
+
+  const refreshFriendStatus = async () => { if (viewedUserId) setFriendRelationship(await apiCall<FriendRelationship>(`/friends/status/${viewedUserId}`)); };
+  const findIncomingRequestId = async () => { const incoming = await apiCall<Array<{ requestId: number | string; _id: number | string }>>("/friends/requests/incoming"); return incoming.find((request) => String(request._id) === String(viewedUserId))?.requestId; };
+  const friendAction = async (action: "add" | "cancel" | "accept" | "decline" | "remove") => {
+    if (!viewedUserId) return;
+    setFriendLoading(true);
+    try {
+      if (action === "add") await apiCall(`/friends/request/${viewedUserId}`, { method: "POST" });
+      if (action === "cancel" || action === "remove") await apiCall(`/friends/${action === "cancel" ? `request/${viewedUserId}` : viewedUserId}`, { method: "DELETE" });
+      if (action === "accept" || action === "decline") { const requestId = friendRelationship.requestId || await findIncomingRequestId(); if (!requestId) throw new Error("Friend request not found"); await apiCall(`/friends/request/${requestId}/${action}`, { method: "POST" }); }
+      await refreshFriendStatus();
+    } catch (error: any) { Alert.alert("Could not update friendship", error.message); } finally { setFriendLoading(false); }
+  };
 
   const saveBio = async () => {
     setSaving(true);
@@ -158,6 +189,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
           <AvatarWithStatus uri={profile?.avatar} size={104} online={profileOnline} />
           <Text style={styles.name}>{profile?.name || "User"}</Text>
           <Text style={styles.email}>{profile?.email}</Text>
+          {!isOwnProfile && <View style={styles.friendActions}>{friendRelationship.status === "none" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("add")} style={styles.friendButton}><Text style={styles.friendButtonText}>{friendLoading ? "..." : "Add Friend"}</Text></TouchableOpacity>}{friendRelationship.status === "pending_sent" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("cancel")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Cancel Request</Text></TouchableOpacity>}{friendRelationship.status === "pending_received" && <><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("accept")} style={styles.friendButton}><Text style={styles.friendButtonText}>Confirm</Text></TouchableOpacity><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("decline")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Delete</Text></TouchableOpacity></>}{friendRelationship.status === "friends" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("remove")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Friends ✓</Text></TouchableOpacity>}{friendRelationship.status === "blocked" && <Text style={styles.blockedText}>Blocked</Text>}</View>}
         </View>
 
         <View style={styles.accountSection}>
@@ -249,6 +281,12 @@ const styles = StyleSheet.create({
   avatar: { width: 104, height: 104, borderRadius: 52, backgroundColor: AppColors.whiteSoft, marginBottom: 14 },
   name: { color: AppColors.primaryDark, fontSize: 24, fontWeight: "700" },
   email: { color: AppColors.textMuted, fontSize: 14, marginTop: 5 },
+  friendActions: { flexDirection: "row", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: 8, marginTop: 14 },
+  friendButton: { backgroundColor: AppColors.buttonInner, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 10 },
+  friendButtonText: { color: AppColors.white, fontWeight: "700" },
+  friendButtonSecondary: { backgroundColor: AppColors.whiteSoft, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 10 },
+  friendButtonSecondaryText: { color: AppColors.primaryDark, fontWeight: "700" },
+  blockedText: { color: "#b42318", fontWeight: "700" },
   accountSection: { marginTop: 12 },
   sectionLabel: { color: AppColors.textMuted, fontSize: 12, fontWeight: "700", letterSpacing: 1 },
   infoRow: { borderBottomWidth: 1, borderBottomColor: "rgba(20,42,68,0.12)", paddingVertical: 16 },

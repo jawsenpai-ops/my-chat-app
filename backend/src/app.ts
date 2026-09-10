@@ -12,6 +12,7 @@ import feedbackRoutes from "./routes/feedbackRoutes";
 import adminRoutes from "./routes/adminRoutes";
 import postRoutes from "./routes/postRoutes";
 import chatRequestRoutes from "./routes/chatRequestRoutes";
+import friendRoutes from "./routes/friendRoutes";
 
 const app = express();
 app.set("trust proxy", process.env.TRUST_PROXY === "true");
@@ -40,6 +41,7 @@ app.use("/api/feedback", feedbackRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/chat-requests", chatRequestRoutes);
+app.use("/api/friends", friendRoutes);
 app.use((_req, res) => {
   res.status(404).json({ message: "Route not found" });
 });

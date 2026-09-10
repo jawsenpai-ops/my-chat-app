@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput, Alert } from "react-native";
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput, Alert, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { RootStackParamList, Chat, ChatRequest, User } from "../types";
+import { RootStackParamList, Chat, ChatRequest, IncomingFriendRequest, User } from "../types";
 import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { getSocket } from "../api/socket";
 import { AppColors } from "../theme/colors";
 import { BottomTabBar } from "../components/BottomTabBar";
 import { AvatarWithStatus } from "../components/AvatarWithStatus";
-import { Modal } from "react-native";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ChatList">;
 
@@ -19,19 +18,23 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const [userSearch, setUserSearch] = useState("");
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
   const [requests, setRequests] = useState<ChatRequest[]>([]);
+  const [friendRequests, setFriendRequests] = useState<IncomingFriendRequest[]>([]);
   const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
   const { logout, user } = useAuth();
   const socket = getSocket();
 
   const loadData = async () => {
     try {
-      const [chatData, userData, requestData] = await Promise.all([
+      const [chatData, userData, requestData, incomingFriends] = await Promise.all([
         apiCall<Chat[]>("/chats"),
         apiCall<User[]>("/users"),
         apiCall<ChatRequest[]>("/chat-requests"),
+        apiCall<IncomingFriendRequest[]>("/friends/requests/incoming"),
       ]);
       setChats(chatData);
       setRequests(requestData);
+      setFriendRequests(incomingFriends);
 
       const currentUserId = user?._id || (user as any)?.id;
       const filteredUsers = userData.filter((u) => {
@@ -73,6 +76,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
       }));
     };
     const handleNotification = () => { loadData(); };
+    const handleFriendEvent = () => { loadData(); };
     const handleChatRead = ({ chatId }: { chatId: string | number }) => {
       setChats((current) => current.map((chat) =>
         String(chat._id) === String(chatId) ? { ...chat, unreadCount: 0 } : chat,
@@ -84,6 +88,10 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
     socket.on("new-message", handleNewMessage);
     socket.on("chat-read", handleChatRead);
     socket.on("notification", handleNotification);
+    socket.on("friend-request-received", handleFriendEvent);
+    socket.on("friend-request-accepted", handleFriendEvent);
+    socket.on("friend-request-declined", handleFriendEvent);
+    socket.on("friend-request-cancelled", handleFriendEvent);
 
     return () => {
       unsubscribeFocus();
@@ -93,14 +101,18 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
       socket.off("new-message", handleNewMessage);
       socket.off("chat-read", handleChatRead);
       socket.off("notification", handleNotification);
+      socket.off("friend-request-received", handleFriendEvent);
+      socket.off("friend-request-accepted", handleFriendEvent);
+      socket.off("friend-request-declined", handleFriendEvent);
+      socket.off("friend-request-cancelled", handleFriendEvent);
     };
   }, []);
 
-  const sendChatRequest = async (targetUser: User) => {
+  const sendFriendRequest = async (targetUser: User) => {
     try {
       const targetId = targetUser._id || (targetUser as any).id;
-      await apiCall(`/chat-requests/with/${targetId}`, { method: "POST" });
-      Alert.alert("Request sent", `You asked ${targetUser.name} to connect.`);
+      await apiCall(`/friends/request/${targetId}`, { method: "POST" });
+      Alert.alert("Friend request sent", `You sent ${targetUser.name} a friend request.`);
     } catch (err: any) {
       Alert.alert("Could not send request", err.message);
     }
@@ -110,6 +122,20 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
     try { await apiCall(`/chat-requests/${request._id}/respond`, { method: "POST", body: JSON.stringify({ action }) }); setRequests((current) => current.filter((item) => item._id !== request._id)); await loadData(); }
     catch (error: any) { Alert.alert("Could not update request", error.message); }
   };
+  const respondToFriendRequest = async (request: IncomingFriendRequest, action: "accept" | "decline") => {
+    try { await apiCall(`/friends/request/${request.requestId}/${action}`, { method: "POST" }); await loadData(); } catch (error: any) { Alert.alert("Could not update friend request", error.message); }
+  };
+
+  const updateChatAction = async (action: "pin" | "mute" | "delete") => {
+    if (!selectedChat) return;
+    const chatId = selectedChat._id || (selectedChat as any).id;
+    try {
+      await apiCall(`/chats/${chatId}/action`, { method: "POST", body: JSON.stringify({ action }) });
+      if (action === "delete") setChats((current) => current.filter((chat) => String(chat._id) !== String(chatId)));
+      else setChats((current) => current.map((chat) => String(chat._id) === String(chatId) ? { ...chat, [action === "pin" ? "pinned" : "muted"]: !(action === "pin" ? chat.pinned : chat.muted) } : chat));
+    } catch (error: any) { Alert.alert("Could not update chat", error.message); }
+    setSelectedChat(null);
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
@@ -117,7 +143,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         <Text style={styles.headerText}>Chats ({user?.name})</Text>
         <TouchableOpacity onPress={() => setNotificationsVisible(true)} style={styles.bellButton} accessibilityLabel="Notifications">
           <Text style={styles.bell}>🔔</Text>
-          {requests.length > 0 && <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{requests.length > 9 ? "9+" : requests.length}</Text></View>}
+          {(requests.length + friendRequests.length) > 0 && <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{requests.length + friendRequests.length > 9 ? "9+" : requests.length + friendRequests.length}</Text></View>}
         </TouchableOpacity>
       </View>
 
@@ -145,7 +171,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
             return key ? `user-${key}-${index}` : `user-idx-${index}`;
           }}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.userCircle} onPress={() => sendChatRequest(item)}>
+            <TouchableOpacity style={styles.userCircle} onPress={() => sendFriendRequest(item)}>
               <AvatarWithStatus uri={item.avatar} size={42} online={onlineUserIds.has(String(item._id))} />
               <Text style={styles.userName} numberOfLines={1}>{item.name}</Text>
               <Text style={styles.addLabel}>Add</Text>
@@ -168,6 +194,8 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
             <TouchableOpacity
               style={styles.chatCard}
               onPress={() => item.participant && navigation.navigate("ChatRoom", { chatId: chatId, participant: item.participant })}
+              onLongPress={() => setSelectedChat(item)}
+              delayLongPress={500}
             >
               <AvatarWithStatus
                 uri={item.participant?.avatar}
@@ -176,8 +204,9 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
               />
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{item.participant?.name}</Text>
-                <Text style={styles.lastMsg} numberOfLines={1}>{item.lastMessage?.text || "No messages"}</Text>
+                <Text style={styles.lastMsg} numberOfLines={1}>{item.muted ? "Muted" : item.lastMessage?.text || "No messages"}</Text>
               </View>
+              {item.pinned && <Text style={styles.pinMark}>Pinned</Text>}
               {!!item.unreadCount && (
                 <View style={styles.unreadBadge}>
                   <Text style={styles.unreadText}>{item.unreadCount > 99 ? "99+" : item.unreadCount}</Text>
@@ -192,7 +221,8 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         onProfilePress={() => navigation.navigate("Profile")}
         onActionPress={() => navigation.navigate("Freedom")}
       />
-      <Modal visible={notificationsVisible} transparent animationType="slide" onRequestClose={() => setNotificationsVisible(false)}><View style={styles.modalBackdrop}><View style={styles.notificationModal}><View style={styles.notificationHeader}><Text style={styles.notificationTitle}>Notifications</Text><TouchableOpacity onPress={() => setNotificationsVisible(false)}><Text style={styles.closeNotification}>X</Text></TouchableOpacity></View>{requests.length === 0 ? <Text style={styles.emptyNotifications}>No new requests</Text> : requests.map((request) => <View key={String(request._id)} style={styles.requestRow}><AvatarWithStatus uri={request.sender.avatar} size={42} online={onlineUserIds.has(String(request.sender._id))} /><View style={styles.requestCopy}><Text style={styles.requestName}>{request.sender.name}</Text><Text style={styles.requestText}>wants to chat with you</Text></View><TouchableOpacity onPress={() => respondToRequest(request, "accept")} style={styles.acceptButton}><Text style={styles.acceptText}>Accept</Text></TouchableOpacity><TouchableOpacity onPress={() => respondToRequest(request, "reject")} style={styles.rejectButton}><Text style={styles.rejectText}>Reject</Text></TouchableOpacity></View>)}</View></View></Modal>
+      <Modal visible={!!selectedChat} transparent animationType="fade" onRequestClose={() => setSelectedChat(null)}><View style={styles.modalBackdrop}><View style={styles.chatActionMenu}><Text style={styles.chatActionTitle}>{selectedChat?.participant?.name}</Text><TouchableOpacity onPress={() => updateChatAction("pin")} style={styles.chatAction}><Text style={styles.chatActionText}>{selectedChat?.pinned ? "Unpin chat" : "Pin chat"}</Text></TouchableOpacity><TouchableOpacity onPress={() => updateChatAction("mute")} style={styles.chatAction}><Text style={styles.chatActionText}>{selectedChat?.muted ? "Unmute chat" : "Mute chat"}</Text></TouchableOpacity><TouchableOpacity onPress={() => updateChatAction("delete")} style={styles.chatAction}><Text style={styles.deleteChatText}>Delete chat</Text></TouchableOpacity><TouchableOpacity onPress={() => setSelectedChat(null)} style={styles.cancelAction}><Text style={styles.cancelActionText}>Cancel</Text></TouchableOpacity></View></View></Modal>
+      <Modal visible={notificationsVisible} transparent animationType="slide" onRequestClose={() => setNotificationsVisible(false)}><View style={styles.modalBackdrop}><View style={styles.notificationModal}><View style={styles.notificationHeader}><Text style={styles.notificationTitle}>Notifications</Text><TouchableOpacity onPress={() => setNotificationsVisible(false)}><Text style={styles.closeNotification}>X</Text></TouchableOpacity></View>{requests.map((request) => <View key={`chat-${String(request._id)}`} style={styles.requestRow}><AvatarWithStatus uri={request.sender.avatar} size={42} online={onlineUserIds.has(String(request.sender._id))} /><View style={styles.requestCopy}><Text style={styles.requestName}>{request.sender.name}</Text><Text style={styles.requestText}>wants to chat with you</Text></View><TouchableOpacity onPress={() => respondToRequest(request, "accept")} style={styles.acceptButton}><Text style={styles.acceptText}>Accept</Text></TouchableOpacity><TouchableOpacity onPress={() => respondToRequest(request, "reject")} style={styles.rejectButton}><Text style={styles.rejectText}>Reject</Text></TouchableOpacity></View>)}{friendRequests.map((request) => <View key={`friend-${String(request.requestId)}`} style={styles.requestRow}><AvatarWithStatus uri={request.avatar} size={42} online={onlineUserIds.has(String(request._id))} /><View style={styles.requestCopy}><Text style={styles.requestName}>{request.name}</Text><Text style={styles.requestText}>sent you a friend request</Text></View><TouchableOpacity onPress={() => respondToFriendRequest(request, "accept")} style={styles.acceptButton}><Text style={styles.acceptText}>Confirm</Text></TouchableOpacity><TouchableOpacity onPress={() => respondToFriendRequest(request, "decline")} style={styles.rejectButton}><Text style={styles.rejectText}>Delete</Text></TouchableOpacity></View>)}{requests.length === 0 && friendRequests.length === 0 && <Text style={styles.emptyNotifications}>No new requests</Text>}</View></View></Modal>
     </SafeAreaView>
   );
 };
@@ -293,6 +323,7 @@ const styles = StyleSheet.create({
     maxWidth: 54,
   },
   addLabel: { color: AppColors.buttonInner, fontSize: 10, fontWeight: "700", marginTop: 2 },
+  pinMark: { color: AppColors.buttonInner, fontSize: 10, fontWeight: "700", marginRight: 8 },
   modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.45)" },
   notificationModal: { backgroundColor: AppColors.background, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, maxHeight: "70%" },
   notificationHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
@@ -307,6 +338,13 @@ const styles = StyleSheet.create({
   acceptText: { color: AppColors.white, fontSize: 11, fontWeight: "700" },
   rejectButton: { backgroundColor: AppColors.whiteSoft, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7, marginLeft: 5 },
   rejectText: { color: "#b42318", fontSize: 11, fontWeight: "700" },
+  chatActionMenu: { backgroundColor: AppColors.background, borderRadius: 18, padding: 20, margin: 18 },
+  chatActionTitle: { color: AppColors.primaryDark, fontSize: 18, fontWeight: "700", marginBottom: 4 },
+  chatAction: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: "rgba(20,42,68,0.1)" },
+  chatActionText: { color: AppColors.primaryDark, fontSize: 16, fontWeight: "600" },
+  deleteChatText: { color: "#b42318", fontSize: 16, fontWeight: "600" },
+  cancelAction: { alignItems: "center", paddingTop: 16 },
+  cancelActionText: { color: AppColors.textMuted, fontWeight: "700" },
   unreadBadge: {
     minWidth: 24,
     height: 24,

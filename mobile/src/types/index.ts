@@ -36,6 +36,8 @@ export interface Chat {
   createdAt: string;
   unreadCount?: number;
   isNew?: boolean;
+  pinned?: boolean;
+  muted?: boolean;
 }
 
 export interface ChatRequest {
@@ -43,6 +45,15 @@ export interface ChatRequest {
   status: "pending" | "accepted" | "rejected";
   createdAt: string;
   sender: User;
+}
+
+export type FriendStatus = "none" | "pending_sent" | "pending_received" | "friends" | "blocked";
+export interface FriendRelationship {
+  status: FriendStatus;
+  requestId?: number | string;
+}
+export interface IncomingFriendRequest extends User {
+  requestId: number | string;
 }
 
 export interface Post {

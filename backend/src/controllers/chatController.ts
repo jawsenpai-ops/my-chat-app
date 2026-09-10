@@ -12,6 +12,8 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
         c.id AS _id,
         c.lastMessageAt,
         c.createdAt,
+        cp.pinned,
+        cp.muted,
         u.id AS participant_id,
         u.name AS participant_name,
         u.email AS participant_email,
@@ -31,8 +33,8 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
       JOIN chat_participants cp_other ON c.id = cp_other.chatId AND cp_other.userId != ?
       JOIN users u ON cp_other.userId = u.id
       LEFT JOIN messages m ON c.lastMessageId = m.id AND m.deleted_at IS NULL
-      WHERE cp.userId = ?
-      ORDER BY c.lastMessageAt DESC
+      WHERE cp.userId = ? AND cp.hidden_at IS NULL
+      ORDER BY cp.pinned DESC, c.lastMessageAt DESC
     `;
 
     const [rows] = await db.query<RowDataPacket[]>(query, [userId, userId, userId]);
@@ -40,6 +42,8 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
     const formattedChats = rows.map((row) => ({
       _id: row._id,
       unreadCount: Number(row.unread_count || 0),
+      pinned: Boolean(row.pinned),
+      muted: Boolean(row.muted),
       participant: {
         _id: row.participant_id,
         name: row.participant_name,
@@ -121,4 +125,18 @@ export async function getOrCreateChat(req: AuthRequest, res: Response, next: Nex
   } catch (error) {
     next(error);
   }
+}
+
+export async function updateChatAction(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const chatId = Number(req.params.chatId);
+    const action = req.body?.action;
+    if (!Number.isSafeInteger(chatId) || !["pin", "mute", "delete"].includes(action)) return res.status(400).json({ message: "Invalid chat action" });
+    const [access] = await db.query<RowDataPacket[]>("SELECT chatId FROM chat_participants WHERE chatId = ? AND userId = ?", [chatId, req.userId]);
+    if (!access.length) return res.status(404).json({ message: "Chat not found" });
+    const column = action === "pin" ? "pinned" : action === "mute" ? "muted" : "hidden_at";
+    if (action === "delete") await db.query("UPDATE chat_participants SET hidden_at = NOW() WHERE chatId = ? AND userId = ?", [chatId, req.userId]);
+    else await db.query(`UPDATE chat_participants SET ${column} = NOT ${column} WHERE chatId = ? AND userId = ?`, [chatId, req.userId]);
+    return res.json({ action, message: "Chat updated" });
+  } catch (error) { return next(error); }
 }

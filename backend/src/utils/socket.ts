@@ -8,7 +8,10 @@ import { rateLimitStore } from "../middleware/rateLimit";
 
 export const onlineUsers: Map<string, string> = new Map();
 let socketIo: SocketServer | null = null;
-export const notifyUser = (userId: number | string, payload: { type: string; message: string; postId?: number }) => {
+export const emitUserEvent = (userId: number | string, event: string, payload: unknown) => {
+  socketIo?.to(`user:${userId}`).emit(event, payload);
+};
+export const notifyUser = (userId: number | string, payload: { type: string; message: string; postId?: number; requestId?: number }) => {
   socketIo?.to(`user:${userId}`).emit("notification", payload);
 };
 
