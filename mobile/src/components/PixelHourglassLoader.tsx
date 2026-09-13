@@ -15,7 +15,14 @@ const sprite = [
 const frameCount = 8;
 const frameDuration = 110;
 
-export const PixelHourglassLoader: React.FC = () => {
+type Props = {
+  /** Pixel + label color. Defaults to the app's dark navy so it reads on light backgrounds. */
+  color?: string;
+  /** Label text under the hourglass. */
+  label?: string;
+};
+
+export const PixelHourglassLoader: React.FC<Props> = ({ color = "#142A44", label = "LOADING" }) => {
   const [frame, setFrame] = useState(0);
   const rotation = useRef(new Animated.Value(0)).current;
 
@@ -52,14 +59,14 @@ export const PixelHourglassLoader: React.FC = () => {
             {[...row].map((pixel, pixelIndex) => (
               <View
                 key={`pixel-${rowIndex}-${pixelIndex}`}
-                style={[styles.pixel, pixel === " " ? styles.emptyPixel : undefined]}
+                style={[styles.pixel, pixel === " " ? styles.emptyPixel : { backgroundColor: color }]}
               />
             ))}
           </View>
         ))}
-        <View style={[styles.sand, { height: 4 + frame * 2 }]} />
+        <View style={[styles.sand, { height: 4 + frame * 2, backgroundColor: color }]} />
       </Animated.View>
-      <Text style={styles.label}>LOADING</Text>
+      <Text style={[styles.label, { color }]}>{label}</Text>
     </View>
   );
 };
@@ -69,7 +76,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#1b1b1b",
+    backgroundColor: "transparent",
   },
   hourglass: {
     width: 88,
@@ -84,7 +91,7 @@ const styles = StyleSheet.create({
   pixel: {
     width: 8,
     height: 8,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#142A44",
   },
   emptyPixel: {
     opacity: 0,
@@ -93,11 +100,10 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: 12,
     bottom: 23,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#142A44",
   },
   label: {
     marginTop: 22,
-    color: "#ffffff",
     fontFamily: "monospace",
     fontSize: 12,
     fontWeight: "700",

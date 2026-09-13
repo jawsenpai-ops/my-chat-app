@@ -59,26 +59,12 @@ export async function createPost(req: AuthRequest, res: Response, next: NextFunc
 export async function updatePost(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const postId = Number(req.params.postId);
-    if (!Number.isSafeInteger(postId) || postId < 1) return res.status(400).json({ message: "Post content is invalid." });
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
-    if (body.length > 5000) return res.status(400).json({ message: "Post content is invalid or too large." });
-    const imagesProvided = req.body?.imageUrls !== undefined || req.body?.imageUrl !== undefined;
-
-    if (imagesProvided) {
-      const images = readImages(req.body?.imageUrls, req.body?.imageUrl);
-      if ((!body && images.length === 0) || images.length !== (Array.isArray(req.body?.imageUrls) ? Math.min(req.body.imageUrls.length, maxPostImages) : images.length)) return res.status(400).json({ message: "Post content is invalid or too large." });
-      const [result] = await db.query<ResultSetHeader>("UPDATE posts SET body = ?, image_url = ?, image_urls = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL", [body, images[0] || null, images.length ? JSON.stringify(images) : null, postId, req.userId]);
-      if (result.affectedRows === 0) return res.status(404).json({ message: "Post not found." });
-    } else {
-      // Caption-only edit: keep the existing images untouched.
-      if (!body) {
-        const [existing] = await db.query<RowDataPacket[]>("SELECT image_url FROM posts WHERE id = ? AND user_id = ? AND deleted_at IS NULL", [postId, req.userId]);
-        if (existing.length === 0) return res.status(404).json({ message: "Post not found." });
-        if (!existing[0].image_url) return res.status(400).json({ message: "Post content is invalid." });
-      }
-      const [result] = await db.query<ResultSetHeader>("UPDATE posts SET body = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL", [body, postId, req.userId]);
-      if (result.affectedRows === 0) return res.status(404).json({ message: "Post not found." });
-    }
+    const images = readImages(req.body?.imageUrls, req.body?.imageUrl);
+    if (!Number.isSafeInteger(postId) || postId < 1 || (!body && images.length === 0)) return res.status(400).json({ message: "Post content is invalid." });
+    if (body.length > 5000 || images.length !== (Array.isArray(req.body?.imageUrls) ? Math.min(req.body.imageUrls.length, maxPostImages) : images.length)) return res.status(400).json({ message: "Post content is invalid or too large." });
+    const [result] = await db.query<ResultSetHeader>("UPDATE posts SET body = ?, image_url = ?, image_urls = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL", [body, images[0] || null, images.length ? JSON.stringify(images) : null, postId, req.userId]);
+    if (result.affectedRows === 0) return res.status(404).json({ message: "Post not found." });
     return res.json({ message: "Post updated." });
   } catch (error) { return next(error); }
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
-import { Alert, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, FlatList, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FriendRelationship, FriendStatus, RootStackParamList, User } from "../types";
@@ -9,6 +9,7 @@ import { useAuth } from "../context/AuthContext";
 import { AppColors } from "../theme/colors";
 import { BottomTabBar } from "../components/BottomTabBar";
 import { AvatarWithStatus } from "../components/AvatarWithStatus";
+import { EditableAvatar } from "../components/EditableAvatar";
 import { getSocket } from "../api/socket";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Profile">;
@@ -27,8 +28,9 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
   const [feedbackSubject, setFeedbackSubject] = useState("");
   const [feedbackMessage, setFeedbackMessage] = useState("");
   const [sendingFeedback, setSendingFeedback] = useState(false);
-  const [friendRelationship, setFriendRelationship] = useState<FriendRelationship>({ status: "none" });
-  const [friendLoading, setFriendLoading] = useState(false);
+   const [friendRelationship, setFriendRelationship] = useState<FriendRelationship>({ status: "none" });
+   const [friendLoading, setFriendLoading] = useState(false);
+  const [friends, setFriends] = useState<User[]>([]);
   const friendSocket = getSocket();
 
   useEffect(() => {
@@ -70,6 +72,12 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
     friendSocket.on("friend-request-cancelled", sync);
     return () => { friendSocket.off("friend-request-received", sync); friendSocket.off("friend-request-accepted", sync); friendSocket.off("friend-request-declined", sync); friendSocket.off("friend-request-cancelled", sync); };
   }, [isOwnProfile, viewedUserId]);
+
+  useEffect(() => {
+    // Show the friends list below the bio on our own profile.
+    if (!isOwnProfile) { setFriends([]); return; }
+    apiCall<User[]>("/friends").then(setFriends).catch(() => setFriends([]));
+  }, [isOwnProfile]);
 
   const refreshFriendStatus = async () => { if (viewedUserId) setFriendRelationship(await apiCall<FriendRelationship>(`/friends/status/${viewedUserId}`)); };
   const findIncomingRequestId = async () => { const incoming = await apiCall<Array<{ requestId: number | string; _id: number | string }>>("/friends/requests/incoming"); return incoming.find((request) => String(request._id) === String(viewedUserId))?.requestId; };
@@ -186,7 +194,11 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.profileIntro}>
-          <AvatarWithStatus uri={profile?.avatar} size={104} online={profileOnline} />
+          {isOwnProfile ? (
+            <EditableAvatar uri={profile?.avatar} size={104} onPress={changeProfilePicture} />
+          ) : (
+            <AvatarWithStatus uri={profile?.avatar} size={104} online={profileOnline} />
+          )}
           <Text style={styles.name}>{profile?.name || "User"}</Text>
           <Text style={styles.email}>{profile?.email}</Text>
           {!isOwnProfile && <View style={styles.friendActions}>{friendRelationship.status === "none" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("add")} style={styles.friendButton}><Text style={styles.friendButtonText}>{friendLoading ? "..." : "Add Friend"}</Text></TouchableOpacity>}{friendRelationship.status === "pending_sent" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("cancel")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Cancel Request</Text></TouchableOpacity>}{friendRelationship.status === "pending_received" && <><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("accept")} style={styles.friendButton}><Text style={styles.friendButtonText}>Confirm</Text></TouchableOpacity><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("decline")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Delete</Text></TouchableOpacity></>}{friendRelationship.status === "friends" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("remove")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Friends ✓</Text></TouchableOpacity>}{friendRelationship.status === "blocked" && <Text style={styles.blockedText}>Blocked</Text>}</View>}
@@ -238,6 +250,27 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
             </TouchableOpacity>
           )}
         </View>
+
+        {isOwnProfile && <View style={styles.friendsSection}>
+          <Text style={styles.sectionLabel}>FRIENDS ({friends.length})</Text>
+          {friends.length === 0 ? (
+            <Text style={styles.emptyFriendsText}>No friends yet. Send some friend requests!</Text>
+          ) : (
+            <FlatList
+              horizontal
+              data={friends}
+              keyExtractor={(item, index) => `friend-${String(item._id)}-${index}`}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.friendsRow}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.friendItem} onPress={() => navigation.navigate("Profile", { userId: item._id, online: Boolean(item.online) })}>
+                  <Image source={{ uri: item.avatar }} style={styles.friendAvatar} />
+                  <Text style={styles.friendName} numberOfLines={1}>{item.name}</Text>
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </View>}
 
         {isOwnProfile && <><Text style={styles.avatarNote}>Profile picture</Text>
         <Text style={styles.helperText}>Your profile picture is shown to your contacts.</Text>
@@ -292,7 +325,13 @@ const styles = StyleSheet.create({
   infoRow: { borderBottomWidth: 1, borderBottomColor: "rgba(20,42,68,0.12)", paddingVertical: 16 },
   infoLabel: { color: AppColors.textMuted, fontSize: 13, marginBottom: 5 },
   infoValue: { color: AppColors.primaryDark, fontSize: 16, fontWeight: "600" },
-  bioSection: { marginTop: 28 },
+   bioSection: { marginTop: 28 },
+   friendsSection: { marginTop: 28 },
+   friendsRow: { paddingVertical: 8 },
+   friendItem: { alignItems: "center", marginRight: 16, width: 64 },
+   friendAvatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: AppColors.whiteSoft, marginBottom: 6 },
+   friendName: { color: AppColors.primaryDark, fontSize: 11, fontWeight: "600", textAlign: "center" },
+   emptyFriendsText: { color: AppColors.textMuted, fontSize: 13, marginTop: 8 },
   bioHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   actionText: { color: AppColors.buttonInner, fontWeight: "700", fontSize: 14 },
   bioDisplay: { minHeight: 54, justifyContent: "center", borderBottomWidth: 1, borderBottomColor: "rgba(20,42,68,0.12)" },

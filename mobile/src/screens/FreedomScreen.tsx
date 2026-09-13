@@ -7,6 +7,7 @@ import { getSocket } from "../api/socket";
 import { useAuth } from "../context/AuthContext";
 import { AppColors } from "../theme/colors";
 import { BottomTabBar } from "../components/BottomTabBar";
+import { PixelHourglassLoader } from "../components/PixelHourglassLoader";
 import { CreatePostComposer, SelectedImage } from "../components/CreatePostComposer";
 import { FriendRelationship, Post, PostComment, RootStackParamList, User } from "../types";
 
@@ -32,12 +33,14 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   const [imageRatios, setImageRatios] = useState<Record<string, number>>({});
   const [carouselIndexes, setCarouselIndexes] = useState<Record<string, number>>({});
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [friendStatuses, setFriendStatuses] = useState<Record<string, FriendRelationship["status"]>>({});
   const [friendActionId, setFriendActionId] = useState<string | null>(null);
   const socket = getSocket();
 
   const loadPosts = async () => {
     try { setPosts(await apiCall<Post[]>("/posts")); } catch (error: any) { Alert.alert("Could not load posts", error.message); }
+    finally { setLoading(false); }
   };
   const refresh = async () => { setRefreshing(true); await loadPosts(); setRefreshing(false); };
 
@@ -187,7 +190,7 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   };
 
   return <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-    <FlatList data={posts} renderItem={renderPost} keyExtractor={(item) => String(item._id)} contentContainerStyle={styles.feed} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />} ListEmptyComponent={<Text style={styles.empty}>No posts yet. Start the conversation.</Text>} />
+    {loading ? <PixelHourglassLoader /> : <FlatList data={posts} renderItem={renderPost} keyExtractor={(item) => String(item._id)} contentContainerStyle={styles.feed} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />} ListEmptyComponent={<Text style={styles.empty}>No posts yet. Start the conversation.</Text>} />}
     <BottomTabBar
       showCreate
       onCreatePress={() => openComposer()}

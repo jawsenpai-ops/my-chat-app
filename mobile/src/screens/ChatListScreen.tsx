@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, TextInput, Alert, Modal } from "react-native";
+import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList, Chat, ChatRequest, IncomingFriendRequest, User } from "../types";
@@ -162,10 +162,14 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
             return key ? `user-${key}-${index}` : `user-idx-${index}`;
           }}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.userCircle} onPress={() => navigation.navigate("Profile", { userId: item._id, online: onlineUserIds.has(String(item._id)) })}>
+            <Pressable
+              android_ripple={{ color: "rgba(255,255,255,0.12)" }}
+              style={({ pressed }) => [styles.userCircle, pressed && styles.userCirclePressed]}
+              onPress={() => navigation.navigate("Profile", { userId: item._id, online: onlineUserIds.has(String(item._id)) })}
+            >
               <AvatarWithStatus uri={item.avatar} size={42} online={onlineUserIds.has(String(item._id))} />
               <Text style={styles.userName} numberOfLines={1}>{item.name}</Text>
-            </TouchableOpacity>
+            </Pressable>
           )}
         />
       </View>
@@ -181,8 +185,9 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         renderItem={({ item }) => {
           const chatId = item._id || (item as any).id;
           return (
-            <TouchableOpacity
-              style={styles.chatCard}
+            <Pressable
+              android_ripple={{ color: "rgba(255,255,255,0.15)", foreground: true }}
+              style={({ pressed }) => [styles.chatCard, pressed && styles.chatCardPressed]}
               onPress={() => item.participant && navigation.navigate("ChatRoom", { chatId: chatId, participant: item.participant })}
               onLongPress={() => setSelectedChat(item)}
               delayLongPress={500}
@@ -202,7 +207,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
                   <Text style={styles.unreadText}>{item.unreadCount > 99 ? "99+" : item.unreadCount}</Text>
                 </View>
               )}
-            </TouchableOpacity>
+            </Pressable>
           );
         }}
       />
@@ -220,7 +225,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: AppColors.background,
+    backgroundColor: "#000000",
     paddingHorizontal: 12,
   },
   header: {
@@ -234,7 +239,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 18,
     fontWeight: "700",
-    color: AppColors.primaryDark,
+    color: AppColors.white,
   },
   logout: {
     color: AppColors.primaryDark,
@@ -263,16 +268,19 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
     borderRadius: 16,
-    backgroundColor: "rgba(20,42,68,0.06)",
+    backgroundColor: "rgba(255,255,255,0.08)",
     borderWidth: 0,
+  },
+  chatCardPressed: {
+    backgroundColor: "rgba(255,255,255,0.16)",
   },
   avatar: { width: 42, height: 42, borderRadius: 21, marginRight: 10 },
   avatarLarge: { width: 42, height: 42, borderRadius: 21 },
-  name: { fontWeight: "700", color: AppColors.primaryDark, fontSize: 15 },
-  lastMsg: { color: AppColors.textMuted, fontSize: 12, marginTop: 4 },
+  name: { fontWeight: "700", color: AppColors.white, fontSize: 15 },
+  lastMsg: { color: "#8b98a9", fontSize: 12, marginTop: 4 },
   sectionTitle: {
     fontWeight: "700",
-    color: AppColors.primaryDark,
+    color: AppColors.white,
     marginBottom: 6,
     marginLeft: 8,
     fontSize: 15,
@@ -283,12 +291,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 42,
     borderRadius: 12,
-    backgroundColor: AppColors.whiteSoft,
-    color: AppColors.inputText,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    color: AppColors.white,
   },
   chatListTitle: {
     fontWeight: "700",
-    color: AppColors.primaryDark,
+    color: AppColors.white,
     marginTop: 6,
     marginBottom: 8,
     marginLeft: 8,
@@ -304,36 +312,39 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: "transparent",
   },
+  userCirclePressed: {
+    backgroundColor: "rgba(255,255,255,0.1)",
+  },
   userName: {
-    color: AppColors.primaryDark,
+    color: "#e6edf5",
     fontSize: 9,
     marginTop: 5,
     fontWeight: "600",
     textAlign: "center",
     maxWidth: 54,
   },
-  pinMark: { color: AppColors.buttonInner, fontSize: 10, fontWeight: "700", marginRight: 8 },
-  modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.45)" },
-  notificationModal: { backgroundColor: AppColors.background, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, maxHeight: "70%" },
+  pinMark: { color: AppColors.buttonOuter, fontSize: 10, fontWeight: "700", marginRight: 8 },
+  modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.6)" },
+  notificationModal: { backgroundColor: "#0d0d10", borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, maxHeight: "70%" },
   notificationHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  notificationTitle: { color: AppColors.primaryDark, fontSize: 20, fontWeight: "700" },
-  closeNotification: { color: AppColors.textMuted, fontSize: 22, fontWeight: "700" },
-  emptyNotifications: { color: AppColors.textMuted, textAlign: "center", paddingVertical: 30 },
-  requestRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "rgba(20,42,68,0.1)" },
+  notificationTitle: { color: AppColors.white, fontSize: 20, fontWeight: "700" },
+  closeNotification: { color: "#9aa5b1", fontSize: 22, fontWeight: "700" },
+  emptyNotifications: { color: "#8b98a9", textAlign: "center", paddingVertical: 30 },
+  requestRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.1)" },
   requestCopy: { flex: 1, marginHorizontal: 10 },
-  requestName: { color: AppColors.primaryDark, fontWeight: "700" },
-  requestText: { color: AppColors.textMuted, fontSize: 12, marginTop: 3 },
+  requestName: { color: AppColors.white, fontWeight: "700" },
+  requestText: { color: "#8b98a9", fontSize: 12, marginTop: 3 },
   acceptButton: { backgroundColor: AppColors.buttonInner, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
   acceptText: { color: AppColors.white, fontSize: 11, fontWeight: "700" },
-  rejectButton: { backgroundColor: AppColors.whiteSoft, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7, marginLeft: 5 },
-  rejectText: { color: "#b42318", fontSize: 11, fontWeight: "700" },
-  chatActionMenu: { backgroundColor: AppColors.background, borderRadius: 18, padding: 20, margin: 18 },
-  chatActionTitle: { color: AppColors.primaryDark, fontSize: 18, fontWeight: "700", marginBottom: 4 },
-  chatAction: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: "rgba(20,42,68,0.1)" },
-  chatActionText: { color: AppColors.primaryDark, fontSize: 16, fontWeight: "600" },
-  deleteChatText: { color: "#b42318", fontSize: 16, fontWeight: "600" },
+  rejectButton: { backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7, marginLeft: 5 },
+  rejectText: { color: "#ff6b6b", fontSize: 11, fontWeight: "700" },
+  chatActionMenu: { backgroundColor: "#0d0d10", borderRadius: 18, padding: 20, margin: 18 },
+  chatActionTitle: { color: AppColors.white, fontSize: 18, fontWeight: "700", marginBottom: 4 },
+  chatAction: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.1)" },
+  chatActionText: { color: AppColors.white, fontSize: 16, fontWeight: "600" },
+  deleteChatText: { color: "#ff6b6b", fontSize: 16, fontWeight: "600" },
   cancelAction: { alignItems: "center", paddingTop: 16 },
-  cancelActionText: { color: AppColors.textMuted, fontWeight: "700" },
+  cancelActionText: { color: "#9aa5b1", fontWeight: "700" },
   unreadBadge: {
     minWidth: 24,
     height: 24,
