@@ -8,7 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import { AppColors } from "../theme/colors";
 import { BottomTabBar } from "../components/BottomTabBar";
 import { CreatePostComposer, SelectedImage } from "../components/CreatePostComposer";
-import { Post, PostComment, RootStackParamList, User } from "../types";
+import { FriendRelationship, Post, PostComment, RootStackParamList, User } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Freedom">;
 
@@ -32,6 +32,8 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   const [imageRatios, setImageRatios] = useState<Record<string, number>>({});
   const [carouselIndexes, setCarouselIndexes] = useState<Record<string, number>>({});
   const [refreshing, setRefreshing] = useState(false);
+  const [friendStatuses, setFriendStatuses] = useState<Record<string, FriendRelationship["status"]>>({});
+  const [friendActionId, setFriendActionId] = useState<string | null>(null);
   const socket = getSocket();
 
   const loadPosts = async () => {
@@ -47,6 +49,25 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
     return () => { socket.off("online-users", online); };
   }, []);
   useEffect(() => { const handleNotification = (notification: { message: string }) => Alert.alert("New activity", notification.message); socket.on("notification", handleNotification); return () => { socket.off("notification", handleNotification); }; }, []);
+
+  useEffect(() => {
+    const authorIds = Array.from(new Set(posts.map((post) => String(post.author._id)).filter((id) => id !== String(user?._id))));
+    if (!authorIds.length) return;
+    Promise.all(authorIds.map(async (authorId) => [authorId, await apiCall<FriendRelationship>(`/friends/status/${authorId}`)] as const))
+      .then((statuses) => setFriendStatuses((current) => Object.fromEntries([...Object.entries(current), ...statuses.map(([id, relationship]) => [id, relationship.status])])))
+      .catch(() => undefined);
+  }, [posts, user?._id]);
+
+  useEffect(() => {
+    const refreshFriendStatus = () => {
+      setPosts((current) => [...current]);
+    };
+    socket.on("friend-request-received", refreshFriendStatus);
+    socket.on("friend-request-accepted", refreshFriendStatus);
+    socket.on("friend-request-declined", refreshFriendStatus);
+    socket.on("friend-request-cancelled", refreshFriendStatus);
+    return () => { socket.off("friend-request-received", refreshFriendStatus); socket.off("friend-request-accepted", refreshFriendStatus); socket.off("friend-request-declined", refreshFriendStatus); socket.off("friend-request-cancelled", refreshFriendStatus); };
+  }, []);
 
   useEffect(() => {
     posts.forEach((post) => {
@@ -77,7 +98,9 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   const savePost = async () => {
     if (!body.trim() && images.length === 0) return Alert.alert("Add something", "Write a post or choose an image first.");
     try {
-      const options = { method: editingPost ? "PATCH" : "POST", body: JSON.stringify({ body, imageUrls: images.map((image) => image.uri) }) };
+      // When editing, only the caption is sent — existing photos stay untouched.
+      const payload = editingPost ? { body } : { body, imageUrls: images.map((image) => image.uri) };
+      const options = { method: editingPost ? "PATCH" : "POST", body: JSON.stringify(payload) };
       await apiCall(editingPost ? `/posts/${editingPost._id}` : "/posts", options);
       setComposerVisible(false);
       await loadPosts();
@@ -128,6 +151,16 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
     } catch (error: any) { Alert.alert("Could not send post", error.message); }
   };
 
+  const sendPostFriendRequest = async (authorId: number | string) => {
+    const id = String(authorId);
+    setFriendActionId(id);
+    // Optimistic: show "Pending" immediately, revert if the request fails.
+    setFriendStatuses((current) => ({ ...current, [id]: "pending_sent" }));
+    try { await apiCall(`/friends/request/${authorId}`, { method: "POST" }); }
+    catch (error: any) { setFriendStatuses((current) => ({ ...current, [id]: "none" })); Alert.alert("Could not send friend request", error.message); }
+    finally { setFriendActionId(null); }
+  };
+
   const openFullScreen = (photos: string[], index: number) => {
     setFullScreenImages(photos);
     setFullScreenIndex(index);
@@ -135,9 +168,11 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
 
   const renderPost = ({ item }: { item: Post }) => {
     const online = onlineIds.has(String(item.author._id)) || String(item.author._id) === String(user?._id);
+    const authorId = String(item.author._id);
+    const friendStatus = friendStatuses[authorId];
     return <View style={styles.postCard}>
       <View style={styles.postHeader}>
-        <TouchableOpacity style={styles.authorWrap} onPress={() => navigation.navigate("Profile", { userId: item.author._id, online })} activeOpacity={0.75}><View><Image source={{ uri: item.author.avatar }} style={styles.avatar} />{online && <View style={styles.onlineDot} />}</View><View><Text style={styles.authorName}>{item.author.name}</Text><Text style={styles.meta}>{online ? "Online" : "Offline"} · {new Date(item.createdAt).toLocaleString()}</Text></View></TouchableOpacity>
+        <TouchableOpacity style={styles.authorWrap} onPress={() => navigation.navigate("Profile", { userId: item.author._id, online })} activeOpacity={0.75}><View><Image source={{ uri: item.author.avatar }} style={styles.avatar} />{online && <View style={styles.onlineDot} />}</View><View style={styles.authorCopy}><View style={styles.authorNameRow}><Text style={styles.authorName}>{item.author.name}</Text>{authorId !== String(user?._id) && (friendStatus === "friends" ? <Text style={styles.partnerLabel}>Partner</Text> : friendStatus === "pending_sent" ? <Text style={styles.pendingLabel}>Pending</Text> : <TouchableOpacity disabled={friendActionId === authorId} onPress={() => sendPostFriendRequest(item.author._id)}><Text style={styles.addFriendLabel}>{friendActionId === authorId ? "..." : "Add Friend"}</Text></TouchableOpacity>)}</View><Text style={styles.meta}>{online ? "Online" : "Offline"} · {new Date(item.createdAt).toLocaleString()}</Text></View></TouchableOpacity>
         <TouchableOpacity onPress={() => setMenuPost(item)}><Text style={styles.more}>...</Text></TouchableOpacity>
       </View>
       {!!item.body && <Text style={styles.postBody}>{item.body}</Text>}
@@ -159,7 +194,7 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
       onProfilePress={() => navigation.navigate("Profile")}
       onActionPress={() => undefined}
     />
-    <Modal visible={composerVisible} animationType="slide" transparent onRequestClose={() => setComposerVisible(false)}><View style={styles.modalBackdrop}><CreatePostComposer body={body} images={images} onBodyChange={setBody} onImagesChange={setImages} onSubmit={savePost} onCancel={() => setComposerVisible(false)} submitLabel={editingPost ? "Save Changes" : "Post"} authorName={user?.name} authorAvatar={user?.avatar} /></View></Modal>
+    <Modal visible={composerVisible} animationType="slide" transparent onRequestClose={() => setComposerVisible(false)}><View style={styles.modalBackdrop}><CreatePostComposer body={body} images={images} onBodyChange={setBody} onImagesChange={setImages} onSubmit={savePost} onCancel={() => setComposerVisible(false)} submitLabel={editingPost ? "Save Changes" : "Post"} authorName={user?.name} authorAvatar={user?.avatar} lockImages={!!editingPost} /></View></Modal>
     <Modal visible={!!menuPost} animationType="fade" transparent onRequestClose={() => setMenuPost(null)}><View style={styles.modalBackdrop}><View style={styles.menu}><TouchableOpacity onPress={() => { setMenuPost(null); Share.share({ message: `https://ikiyadm.com/posts/${menuPost?._id}` }); }}><Text style={styles.menuItem}>Copy link</Text></TouchableOpacity><TouchableOpacity onPress={() => { setSharePost(menuPost); setMenuPost(null); }}><Text style={styles.menuItem}>Send to my friend</Text></TouchableOpacity>{menuPost?.isOwner && <><TouchableOpacity onPress={() => { const post = menuPost; setMenuPost(null); openComposer(post); }}><Text style={styles.menuItem}>Edit post</Text></TouchableOpacity><TouchableOpacity onPress={() => deletePost(menuPost)}><Text style={[styles.menuItem, styles.danger]}>Delete post</Text></TouchableOpacity></>}</View></View></Modal>
     <Modal visible={!!sharePost} animationType="slide" transparent onRequestClose={() => setSharePost(null)}><View style={styles.modalBackdrop}><View style={styles.menu}><Text style={styles.modalTitle}>Send to my friend</Text>{users.map((friend) => <TouchableOpacity key={String(friend._id)} onPress={() => shareToFriend(friend)} style={styles.friend}><Image source={{ uri: friend.avatar }} style={styles.commentAvatar} /><Text style={styles.menuItem}>{friend.name}</Text></TouchableOpacity>)}<TouchableOpacity onPress={() => setSharePost(null)}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity></View></View></Modal>
     <Modal visible={fullScreenImages.length > 0} animationType="fade" presentationStyle="fullScreen" statusBarTranslucent navigationBarTranslucent onShow={() => StatusBar.setHidden(true, "none")} onDismiss={() => StatusBar.setHidden(false, "none")} onRequestClose={() => setFullScreenImages([])}><View style={styles.fullScreen}><FlatList horizontal pagingEnabled showsHorizontalScrollIndicator={false} data={fullScreenImages} initialScrollIndex={fullScreenIndex} getItemLayout={(_, index) => ({ length: Dimensions.get("window").width, offset: Dimensions.get("window").width * index, index })} onMomentumScrollEnd={(event) => setFullScreenIndex(Math.round(event.nativeEvent.contentOffset.x / Dimensions.get("window").width))} keyExtractor={(_, index) => `full-photo-${index}`} renderItem={({ item: uri }) => <Image source={{ uri }} style={styles.fullScreenImage} resizeMode="contain" />} /><View style={styles.fullScreenCounter}><Text style={styles.fullScreenCounterText}>{fullScreenIndex + 1}/{fullScreenImages.length}</Text></View></View></Modal>
@@ -167,6 +202,7 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
+  authorCopy: { flex: 1, minWidth: 0 }, authorNameRow: { flexDirection: "row", alignItems: "center", gap: 8 }, addFriendLabel: { color: AppColors.buttonInner, fontSize: 11, fontWeight: "700" }, pendingLabel: { color: AppColors.textMuted, fontSize: 11, fontWeight: "700" }, partnerLabel: { color: AppColors.success, fontSize: 11, fontWeight: "700" },
   container: { flex: 1, backgroundColor: AppColors.background }, feedPhoto: { width: Dimensions.get("window").width - 56, aspectRatio: 4 / 5, borderRadius: 12, marginTop: 12, backgroundColor: AppColors.whiteSoft }, carouselIndicator: { position: "absolute", right: 10, top: 20, backgroundColor: "rgba(0,0,0,0.65)", borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5 }, carouselIndicatorText: { color: AppColors.white, fontSize: 12, fontWeight: "700" }, reply: { marginLeft: 36 }, replyLink: { color: AppColors.buttonInner, fontSize: 11, fontWeight: "700", marginTop: 3 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 10, backgroundColor: AppColors.primaryDark },
   back: { color: AppColors.white, fontSize: 38, lineHeight: 38 }, title: { color: AppColors.white, fontSize: 20, fontWeight: "700" }, headerPlus: { color: AppColors.white, fontSize: 28 },

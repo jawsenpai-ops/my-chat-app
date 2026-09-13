@@ -26,11 +26,12 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 
   const loadData = async () => {
     try {
-      const [chatData, userData, requestData, incomingFriends] = await Promise.all([
+      const [chatData, userData, requestData, incomingFriends, friendData] = await Promise.all([
         apiCall<Chat[]>("/chats"),
         apiCall<User[]>("/users"),
         apiCall<ChatRequest[]>("/chat-requests"),
         apiCall<IncomingFriendRequest[]>("/friends/requests/incoming"),
+        apiCall<User[]>("/friends"),
       ]);
       setChats(chatData);
       setRequests(requestData);
@@ -39,7 +40,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
       const currentUserId = user?._id || (user as any)?.id;
       const filteredUsers = userData.filter((u) => {
         const uId = u._id || (u as any).id;
-        return String(uId) !== String(currentUserId);
+        return String(uId) !== String(currentUserId) && friendData.some((friend) => String(friend._id) === String(uId));
       });
       setUsers(filteredUsers);
     } catch (err) {
@@ -108,16 +109,6 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
     };
   }, []);
 
-  const sendFriendRequest = async (targetUser: User) => {
-    try {
-      const targetId = targetUser._id || (targetUser as any).id;
-      await apiCall(`/friends/request/${targetId}`, { method: "POST" });
-      Alert.alert("Friend request sent", `You sent ${targetUser.name} a friend request.`);
-    } catch (err: any) {
-      Alert.alert("Could not send request", err.message);
-    }
-  };
-
   const respondToRequest = async (request: ChatRequest, action: "accept" | "reject") => {
     try { await apiCall(`/chat-requests/${request._id}/respond`, { method: "POST", body: JSON.stringify({ action }) }); setRequests((current) => current.filter((item) => item._id !== request._id)); await loadData(); }
     catch (error: any) { Alert.alert("Could not update request", error.message); }
@@ -171,10 +162,9 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
             return key ? `user-${key}-${index}` : `user-idx-${index}`;
           }}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.userCircle} onPress={() => sendFriendRequest(item)}>
+            <TouchableOpacity style={styles.userCircle} onPress={() => navigation.navigate("Profile", { userId: item._id, online: onlineUserIds.has(String(item._id)) })}>
               <AvatarWithStatus uri={item.avatar} size={42} online={onlineUserIds.has(String(item._id))} />
               <Text style={styles.userName} numberOfLines={1}>{item.name}</Text>
-              <Text style={styles.addLabel}>Add</Text>
             </TouchableOpacity>
           )}
         />
@@ -322,7 +312,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     maxWidth: 54,
   },
-  addLabel: { color: AppColors.buttonInner, fontSize: 10, fontWeight: "700", marginTop: 2 },
   pinMark: { color: AppColors.buttonInner, fontSize: 10, fontWeight: "700", marginRight: 8 },
   modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.45)" },
   notificationModal: { backgroundColor: AppColors.background, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, maxHeight: "70%" },

@@ -16,9 +16,10 @@ type Props = {
   submitLabel: string;
   authorName?: string;
   authorAvatar?: string;
+  lockImages?: boolean;
 };
 
-export const CreatePostComposer: React.FC<Props> = ({ body, images, onBodyChange, onImagesChange, onSubmit, onCancel, submitLabel, authorName, authorAvatar }) => {
+export const CreatePostComposer: React.FC<Props> = ({ body, images, onBodyChange, onImagesChange, onSubmit, onCancel, submitLabel, authorName, authorAvatar, lockImages = false }) => {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [annotationMode, setAnnotationMode] = useState(false);
 
@@ -69,19 +70,19 @@ export const CreatePostComposer: React.FC<Props> = ({ body, images, onBodyChange
   };
 
   return <View style={styles.composer}>
-    <Text style={styles.title}>Create post</Text>
+    <Text style={styles.title}>{lockImages ? "Edit post" : "Create post"}</Text>
     <View style={styles.author}><Image source={{ uri: authorAvatar }} style={styles.avatar} /><Text style={styles.authorName}>{authorName}</Text></View>
     <TextInput value={body} onChangeText={onBodyChange} multiline placeholder="What's on your mind?" placeholderTextColor={AppColors.placeholder} style={styles.input} />
     {images.length > 0 && <View style={styles.grid}>{images.map((image, index) => <View key={`${image.uri.slice(0, 20)}-${index}`} style={[styles.tile, images.length === 1 && styles.singleTile, images.length === 2 && styles.doubleTile]}>
-      <TouchableOpacity activeOpacity={0.9} onPress={() => { setEditingIndex(index); setAnnotationMode(false); }} onPressIn={addMark} style={styles.imageTouch}>
+      <TouchableOpacity activeOpacity={0.9} disabled={lockImages} onPress={() => { setEditingIndex(index); setAnnotationMode(false); }} onPressIn={addMark} style={styles.imageTouch}>
         <Image source={{ uri: image.uri }} style={styles.image} resizeMode="cover" />
         {image.marks?.map((mark, markIndex) => <View key={markIndex} style={[styles.mark, { left: mark.x - 7, top: mark.y - 7 }]} />)}
       </TouchableOpacity>
-      <TouchableOpacity onPress={() => removeImage(index)} style={styles.remove}><Text style={styles.removeText}>X</Text></TouchableOpacity>
-      <TouchableOpacity onPress={() => { setEditingIndex(index); setAnnotationMode(false); }} style={styles.edit}><Text style={styles.editText}>Edit</Text></TouchableOpacity>
+      {!lockImages && <TouchableOpacity onPress={() => removeImage(index)} style={styles.remove}><Text style={styles.removeText}>X</Text></TouchableOpacity>}
+      {!lockImages && <TouchableOpacity onPress={() => { setEditingIndex(index); setAnnotationMode(false); }} style={styles.edit}><Text style={styles.editText}>Edit</Text></TouchableOpacity>}
       {index === 3 && images.length > 4 && <View style={styles.more}><Text style={styles.moreText}>+{images.length - 4}</Text></View>}
     </View>)}</View>}
-    <View style={styles.actions}><TouchableOpacity onPress={chooseImages} style={styles.photoButton}><Text style={styles.photoText}>Add photos ({images.length}/50)</Text></TouchableOpacity><TouchableOpacity onPress={onCancel}><Text style={styles.cancel}>Cancel</Text></TouchableOpacity><TouchableOpacity onPress={onSubmit} style={styles.submit}><Text style={styles.submitText}>{submitLabel}</Text></TouchableOpacity></View>
+    <View style={styles.actions}>{!lockImages && <TouchableOpacity onPress={chooseImages} style={styles.photoButton}><Text style={styles.photoText}>Add photos ({images.length}/50)</Text></TouchableOpacity>}{lockImages && images.length > 0 && <View style={styles.photoButton}><Text style={styles.photoText}>Photos locked ({images.length})</Text></View>}<TouchableOpacity onPress={onCancel}><Text style={styles.cancel}>Cancel</Text></TouchableOpacity><TouchableOpacity onPress={onSubmit} style={styles.submit}><Text style={styles.submitText}>{submitLabel}</Text></TouchableOpacity></View>
     <Modal visible={editingIndex !== null} transparent animationType="slide" onRequestClose={() => setEditingIndex(null)}><View style={styles.backdrop}><View style={styles.editor}><Text style={styles.title}>Edit photo</Text>{editingIndex !== null && <TouchableOpacity onPress={addMark} activeOpacity={1} style={styles.editorImage}><Image source={{ uri: images[editingIndex].uri }} style={styles.editorImageInner} resizeMode="contain" />{images[editingIndex].marks?.map((mark, markIndex) => <View key={markIndex} style={[styles.mark, { left: mark.x - 7, top: mark.y - 7 }]} />)}</TouchableOpacity>}<View style={styles.editorActions}><TouchableOpacity onPress={() => editImage("crop")}><Text style={styles.tool}>Crop</Text></TouchableOpacity><TouchableOpacity onPress={() => editImage("rotate")}><Text style={styles.tool}>Rotate</Text></TouchableOpacity><TouchableOpacity onPress={() => editImage("scale")}><Text style={styles.tool}>Scale</Text></TouchableOpacity><TouchableOpacity onPress={() => setAnnotationMode(!annotationMode)}><Text style={[styles.tool, annotationMode && styles.activeTool]}>Draw</Text></TouchableOpacity></View><TouchableOpacity onPress={() => setEditingIndex(null)} style={styles.submit}><Text style={styles.submitText}>Done</Text></TouchableOpacity></View></View></Modal>
   </View>;
 };

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Image, Alert, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { RootStackParamList, Message } from "../types";
+import { FriendRelationship, RootStackParamList, Message } from "../types";
 import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { getSocket } from "../api/socket";
@@ -10,7 +10,7 @@ import { AppColors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ChatRoom">;
 
-export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
+export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const { chatId, participant } = route.params;
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
@@ -20,9 +20,24 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const listRef = useRef<FlatList<Message>>(null);
   const { user } = useAuth();
+  const [isFriend, setIsFriend] = useState(false);
+  const [partnerOnline, setPartnerOnline] = useState(false);
 
   useEffect(() => {
     const socket = getSocket();
+
+    // Track the partner's online status for the header.
+    const handleOnlineUsers = ({ userIds }: { userIds: string[] }) => setPartnerOnline(userIds.map(String).includes(String(participant._id)));
+    const handleUserOnline = ({ userId }: { userId: string | number }) => { if (String(userId) === String(participant._id)) setPartnerOnline(true); };
+    const handleUserOffline = ({ userId }: { userId: string | number }) => { if (String(userId) === String(participant._id)) setPartnerOnline(false); };
+    socket.on("online-users", handleOnlineUsers);
+    socket.on("user-online", handleUserOnline);
+    socket.on("user-offline", handleUserOffline);
+
+    // Only show the "Partner" label when the two users are actually friends.
+    apiCall<FriendRelationship>(`/friends/status/${participant._id}`)
+      .then((relationship) => setIsFriend(relationship.status === "friends"))
+      .catch(() => setIsFriend(false));
 
     const fetchMessages = async () => {
       try {
@@ -68,8 +83,11 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
       socket.emit("leave-chat", String(chatId));
       socket.off("new-message", handleNewMessage);
       socket.off("message-deleted", handleMessageDeleted);
+      socket.off("online-users", handleOnlineUsers);
+      socket.off("user-online", handleUserOnline);
+      socket.off("user-offline", handleUserOffline);
     };
-  }, [chatId]);
+  }, [chatId, participant._id]);
 
   const sendMessage = () => {
     if (!text.trim()) return;
@@ -123,10 +141,10 @@ export const ChatRoomScreen: React.FC<Props> = ({ route }) => {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
       >
-        <View style={styles.header}>
+        <TouchableOpacity style={styles.header} activeOpacity={0.8} onPress={() => navigation.navigate("Profile", { userId: participant._id, online: partnerOnline })} accessibilityLabel="View partner profile">
           <Image source={{ uri: participant.avatar }} style={styles.headerAvatar} />
-          <View><Text style={styles.headerText}>{participant.name}</Text><Text style={styles.partnerLabel}>Partner</Text></View>
-        </View>
+          <View><Text style={styles.headerText}>{participant.name}</Text><Text style={styles.partnerLabel}>{isFriend ? "Partner" : partnerOnline ? "Online" : "Offline"}</Text></View>
+        </TouchableOpacity>
 
         {activePinnedMessage && <View style={styles.pinnedBanner}>
           <TouchableOpacity style={styles.pinnedContent} onPress={() => setPinnedListVisible(true)}>
@@ -194,6 +212,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(20,42,68,0.05)",
     borderBottomWidth: 0,
   },
+  headerTouch: { flex: 1 },
   headerText: {
     fontSize: 16,
     fontWeight: "700",
