@@ -144,7 +144,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
           value={userSearch}
           onChangeText={setUserSearch}
           placeholder="Search by name or Gmail"
-          placeholderTextColor={AppColors.placeholder}
+          placeholderTextColor="rgba(0, 0, 0, 0.4)"
           autoCapitalize="none"
           autoCorrect={false}
           style={styles.userSearch}
@@ -163,7 +163,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
           }}
           renderItem={({ item }) => (
             <Pressable
-              android_ripple={{ color: "rgba(255,255,255,0.12)" }}
+              android_ripple={{ color: "rgba(0,0,0,0.12)" }}
               style={({ pressed }) => [styles.userCircle, pressed && styles.userCirclePressed]}
               onPress={() => navigation.navigate("Profile", { userId: item._id, online: onlineUserIds.has(String(item._id)) })}
             >
@@ -225,7 +225,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#000000",
+    backgroundColor: AppColors.background,
     paddingHorizontal: 12,
   },
   header: {
@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
   headerText: {
     fontSize: 18,
     fontWeight: "700",
-    color: AppColors.white,
+    color: "#000000", // 👈 Black Text
   },
   logout: {
     color: AppColors.primaryDark,
@@ -268,19 +268,27 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
     borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.08)",
+    backgroundColor: "#000000",
     borderWidth: 0,
   },
   chatCardPressed: {
-    backgroundColor: "rgba(255,255,255,0.16)",
+    backgroundColor: "#1f1f1f",
   },
   avatar: { width: 42, height: 42, borderRadius: 21, marginRight: 10 },
   avatarLarge: { width: 42, height: 42, borderRadius: 21 },
-  name: { fontWeight: "700", color: AppColors.white, fontSize: 15 },
-  lastMsg: { color: "#8b98a9", fontSize: 12, marginTop: 4 },
+  name: { 
+    fontWeight: "700", 
+    color: "#FFFFFF",
+    fontSize: 15 
+  },
+  lastMsg: { 
+    color: "#A0AEC0",
+    fontSize: 12, 
+    marginTop: 4 
+  },
   sectionTitle: {
     fontWeight: "700",
-    color: AppColors.white,
+    color: "#000000", // 👈 Black Text
     marginBottom: 6,
     marginLeft: 8,
     fontSize: 15,
@@ -291,12 +299,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     height: 42,
     borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    color: AppColors.white,
+    backgroundColor: "rgba(0, 0, 0, 0.05)",
+    color: "#000000", // 👈 Black Text
   },
   chatListTitle: {
     fontWeight: "700",
-    color: AppColors.white,
+    color: "#000000", // 👈 Black Text
     marginTop: 6,
     marginBottom: 8,
     marginLeft: 8,
@@ -313,17 +321,17 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   userCirclePressed: {
-    backgroundColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(0,0,0,0.05)",
   },
   userName: {
-    color: "#e6edf5",
+    color: "#000000", // 👈 Black Text
     fontSize: 9,
     marginTop: 5,
     fontWeight: "600",
     textAlign: "center",
     maxWidth: 54,
   },
-  pinMark: { color: AppColors.buttonOuter, fontSize: 10, fontWeight: "700", marginRight: 8 },
+  pinMark: { color: "#4ECCD3", fontSize: 10, fontWeight: "700", marginRight: 8 },
   modalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.6)" },
   notificationModal: { backgroundColor: "#0d0d10", borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, maxHeight: "70%" },
   notificationHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
