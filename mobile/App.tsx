@@ -10,6 +10,7 @@ import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { CropProfilePictureScreen } from "./src/screens/CropProfilePictureScreen";
 import { FreedomScreen } from "./src/screens/FreedomScreen";
 import { AdminDashboardScreen } from "./src/screens/AdminDashboardScreen";
+import { NotificationScreen } from "./src/screens/NotificationScreen";
 import { PixelHourglassLoader } from "./src/components/PixelHourglassLoader";
 import { RootStackParamList } from "./src/types";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -28,6 +29,7 @@ const AppNavigator = () => {
       {user ? (
         <>
           <Stack.Screen name="ChatList" component={ChatListScreen} />
+          <Stack.Screen name="Notifications" component={NotificationScreen} />
           <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="Freedom" component={FreedomScreen} />

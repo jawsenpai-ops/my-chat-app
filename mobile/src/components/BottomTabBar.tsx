@@ -10,14 +10,17 @@ type Props = {
   onCreatePress?: () => void;
   onActionPress: () => void;
   showCreate?: boolean;
+  actionIcon?: "delta" | "search";
 };
 
-export const BottomTabBar: React.FC<Props> = ({ onProfilePress, onCreatePress, onActionPress, showCreate = false }) => {
+export const BottomTabBar: React.FC<Props> = ({ onProfilePress, onCreatePress, onActionPress, showCreate = false, actionIcon = "delta" }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const socket = getSocket();
   const [isOnline, setIsOnline] = useState(socket.connected);
   const createProgress = React.useRef(new Animated.Value(showCreate ? 0 : 1)).current;
+  const iconProgress = React.useRef(new Animated.Value(1)).current;
+  const [visibleActionIcon, setVisibleActionIcon] = React.useState(actionIcon);
 
   useEffect(() => {
     const handleConnect = () => setIsOnline(true);
@@ -35,6 +38,14 @@ export const BottomTabBar: React.FC<Props> = ({ onProfilePress, onCreatePress, o
     createProgress.setValue(0);
     Animated.spring(createProgress, { toValue: 1, friction: 6, tension: 90, useNativeDriver: true }).start();
   }, [createProgress, showCreate]);
+
+  useEffect(() => {
+    if (actionIcon === visibleActionIcon) return;
+    Animated.timing(iconProgress, { toValue: 0.7, duration: 75, useNativeDriver: true }).start(() => {
+      setVisibleActionIcon(actionIcon);
+      Animated.timing(iconProgress, { toValue: 1, duration: 75, useNativeDriver: true }).start();
+    });
+  }, [actionIcon, iconProgress, visibleActionIcon]);
 
   return (
     <View style={[styles.safeArea, { paddingBottom: Math.max(insets.bottom + 8, 16) }]}>
@@ -65,7 +76,7 @@ export const BottomTabBar: React.FC<Props> = ({ onProfilePress, onCreatePress, o
           onPress={onActionPress}
           style={styles.actionButton}
         >
-          <Text style={styles.actionIcon}>∆</Text>
+          <Animated.Text style={[styles.actionIcon, { transform: [{ scale: iconProgress }] }]}>{visibleActionIcon === "search" ? "Q" : "∆"}</Animated.Text>
         </TouchableOpacity>
       </View>
     </View>

@@ -30,6 +30,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
   const [sendingFeedback, setSendingFeedback] = useState(false);
    const [friendRelationship, setFriendRelationship] = useState<FriendRelationship>({ status: "none" });
    const [friendLoading, setFriendLoading] = useState(false);
+  const [messageLoading, setMessageLoading] = useState(false);
   const [friends, setFriends] = useState<User[]>([]);
   const friendSocket = getSocket();
 
@@ -90,6 +91,19 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
       if (action === "accept" || action === "decline") { const requestId = friendRelationship.requestId || await findIncomingRequestId(); if (!requestId) throw new Error("Friend request not found"); await apiCall(`/friends/request/${requestId}/${action}`, { method: "POST" }); }
       await refreshFriendStatus();
     } catch (error: any) { Alert.alert("Could not update friendship", error.message); } finally { setFriendLoading(false); }
+  };
+
+  const openChat = async () => {
+    if (!profile || messageLoading) return;
+    setMessageLoading(true);
+    try {
+      const chat = await apiCall<{ _id: string | number }>(`/chats/with/${profile._id}`, { method: "POST" });
+      navigation.navigate("ChatRoom", { chatId: chat._id, participant: profile });
+    } catch (error: any) {
+      Alert.alert("Could not open chat", error.message);
+    } finally {
+      setMessageLoading(false);
+    }
   };
 
   const saveBio = async () => {
@@ -201,7 +215,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
           )}
           <Text style={styles.name}>{profile?.name || "User"}</Text>
           <Text style={styles.email}>{profile?.email}</Text>
-          {!isOwnProfile && <View style={styles.friendActions}>{friendRelationship.status === "none" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("add")} style={styles.friendButton}><Text style={styles.friendButtonText}>{friendLoading ? "..." : "Add Friend"}</Text></TouchableOpacity>}{friendRelationship.status === "pending_sent" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("cancel")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Cancel Request</Text></TouchableOpacity>}{friendRelationship.status === "pending_received" && <><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("accept")} style={styles.friendButton}><Text style={styles.friendButtonText}>Confirm</Text></TouchableOpacity><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("decline")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Delete</Text></TouchableOpacity></>}{friendRelationship.status === "friends" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("remove")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Friends ✓</Text></TouchableOpacity>}{friendRelationship.status === "blocked" && <Text style={styles.blockedText}>Blocked</Text>}</View>}
+          {!isOwnProfile && <View style={styles.friendActions}>{friendRelationship.status === "none" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("add")} style={styles.friendButton}><Text style={styles.friendButtonText}>{friendLoading ? "..." : "Add Friend"}</Text></TouchableOpacity>}{friendRelationship.status === "pending_sent" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("cancel")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Cancel Request</Text></TouchableOpacity>}{friendRelationship.status === "pending_received" && <><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("accept")} style={styles.friendButton}><Text style={styles.friendButtonText}>Confirm</Text></TouchableOpacity><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("decline")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Delete</Text></TouchableOpacity></>}{friendRelationship.status === "friends" && <><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("remove")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Friends ✓</Text></TouchableOpacity><TouchableOpacity disabled={messageLoading} onPress={openChat} style={styles.friendButton}><Text style={styles.friendButtonText}>{messageLoading ? "..." : "Message"}</Text></TouchableOpacity></>}{friendRelationship.status === "blocked" && <Text style={styles.blockedText}>Blocked</Text>}</View>}
         </View>
 
         <View style={styles.accountSection}>

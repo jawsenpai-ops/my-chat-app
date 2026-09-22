@@ -5,6 +5,7 @@ export interface User {
   avatar: string;
   bio: string;
   role?: "user" | "admin";
+  isPartner?: boolean;
   createdAt: string;
   online?: boolean;
 }
@@ -78,13 +79,30 @@ export interface PostComment {
   author: Pick<User, "_id" | "name" | "avatar">;
 }
 
+export interface PostCommentsResponse {
+  comments: PostComment[];
+  hasMore: boolean;
+}
+
+export type NotificationType = "FRIEND_REQ" | "FRIEND_ACCEPT" | "COMMENT" | "LIKE";
+export interface AppNotification {
+  _id: number | string;
+  type: NotificationType;
+  entityId: number | string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+  sender: Pick<User, "_id" | "name" | "avatar">;
+}
+
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   ChatList: undefined;
   ChatRoom: { chatId: string | number; participant: User };
   Profile: { userId?: number | string; online?: boolean } | undefined;
-  Freedom: { openComposer?: boolean } | undefined;
+  Freedom: { openComposer?: boolean; highlightPostId?: number | string } | undefined;
+  Notifications: undefined;
   CropProfilePicture: { uri: string; width: number; height: number };
   AdminDashboard: undefined;
 };

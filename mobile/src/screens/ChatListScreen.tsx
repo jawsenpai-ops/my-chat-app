@@ -40,7 +40,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
       const currentUserId = user?._id || (user as any)?.id;
       const filteredUsers = userData.filter((u) => {
         const uId = u._id || (u as any).id;
-        return String(uId) !== String(currentUserId) && friendData.some((friend) => String(friend._id) === String(uId));
+        return String(uId) !== String(currentUserId) && (u.isPartner === true || friendData.some((friend) => String(friend._id) === String(uId)));
       });
       setUsers(filteredUsers);
     } catch (err) {
@@ -120,6 +120,17 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const updateChatAction = async (action: "pin" | "mute" | "delete") => {
     if (!selectedChat) return;
     const chatId = selectedChat._id || (selectedChat as any).id;
+    if (action === "delete") {
+      Alert.alert("Delete chat", `Delete your chat with ${selectedChat.participant?.name || "this user"}?`, [
+        { text: "Cancel", style: "cancel" },
+        { text: "OK", style: "destructive", onPress: () => updateChatActionConfirmed(chatId) },
+      ]);
+      return;
+    }
+    await updateChatActionConfirmed(chatId, action);
+  };
+
+  const updateChatActionConfirmed = async (chatId: string | number, action: "pin" | "mute" | "delete" = "delete") => {
     try {
       await apiCall(`/chats/${chatId}/action`, { method: "POST", body: JSON.stringify({ action }) });
       if (action === "delete") setChats((current) => current.filter((chat) => String(chat._id) !== String(chatId)));
@@ -132,7 +143,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
     <SafeAreaView style={styles.container} edges={["top", "left", "right"]}>
       <View style={styles.header}>
         <Text style={styles.headerText}>Chats ({user?.name})</Text>
-        <TouchableOpacity onPress={() => setNotificationsVisible(true)} style={styles.bellButton} accessibilityLabel="Notifications">
+        <TouchableOpacity onPress={() => navigation.navigate("Notifications")} style={styles.bellButton} accessibilityLabel="Notifications">
           <Text style={styles.bell}>🔔</Text>
           {(requests.length + friendRequests.length) > 0 && <View style={styles.notificationBadge}><Text style={styles.notificationBadgeText}>{requests.length + friendRequests.length > 9 ? "9+" : requests.length + friendRequests.length}</Text></View>}
         </TouchableOpacity>
@@ -216,7 +227,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         onProfilePress={() => navigation.navigate("Profile")}
         onActionPress={() => navigation.navigate("Freedom")}
       />
-      <Modal visible={!!selectedChat} transparent animationType="fade" onRequestClose={() => setSelectedChat(null)}><View style={styles.modalBackdrop}><View style={styles.chatActionMenu}><Text style={styles.chatActionTitle}>{selectedChat?.participant?.name}</Text><TouchableOpacity onPress={() => updateChatAction("pin")} style={styles.chatAction}><Text style={styles.chatActionText}>{selectedChat?.pinned ? "Unpin chat" : "Pin chat"}</Text></TouchableOpacity><TouchableOpacity onPress={() => updateChatAction("mute")} style={styles.chatAction}><Text style={styles.chatActionText}>{selectedChat?.muted ? "Unmute chat" : "Mute chat"}</Text></TouchableOpacity><TouchableOpacity onPress={() => updateChatAction("delete")} style={styles.chatAction}><Text style={styles.deleteChatText}>Delete chat</Text></TouchableOpacity><TouchableOpacity onPress={() => setSelectedChat(null)} style={styles.cancelAction}><Text style={styles.cancelActionText}>Cancel</Text></TouchableOpacity></View></View></Modal>
+      <Modal visible={!!selectedChat} transparent animationType="slide" onRequestClose={() => setSelectedChat(null)}><View style={styles.modalBackdrop}><View style={styles.chatActionMenu}><Text style={styles.chatActionTitle}>{selectedChat?.participant?.name}</Text><TouchableOpacity onPress={() => updateChatAction("pin")} style={styles.chatAction}><Text style={styles.chatActionText}>{selectedChat?.pinned ? "Unpin chat" : "Pin chat"}</Text></TouchableOpacity><TouchableOpacity onPress={() => updateChatAction("mute")} style={styles.chatAction}><Text style={styles.chatActionText}>{selectedChat?.muted ? "Unmute chat" : "Mute chat"}</Text></TouchableOpacity><TouchableOpacity onPress={() => updateChatAction("delete")} style={styles.chatAction}><Text style={styles.deleteChatText}>Delete chat</Text></TouchableOpacity><TouchableOpacity onPress={() => setSelectedChat(null)} style={styles.cancelAction}><Text style={styles.cancelActionText}>Cancel</Text></TouchableOpacity></View></View></Modal>
       <Modal visible={notificationsVisible} transparent animationType="slide" onRequestClose={() => setNotificationsVisible(false)}><View style={styles.modalBackdrop}><View style={styles.notificationModal}><View style={styles.notificationHeader}><Text style={styles.notificationTitle}>Notifications</Text><TouchableOpacity onPress={() => setNotificationsVisible(false)}><Text style={styles.closeNotification}>X</Text></TouchableOpacity></View>{requests.map((request) => <View key={`chat-${String(request._id)}`} style={styles.requestRow}><AvatarWithStatus uri={request.sender.avatar} size={42} online={onlineUserIds.has(String(request.sender._id))} /><View style={styles.requestCopy}><Text style={styles.requestName}>{request.sender.name}</Text><Text style={styles.requestText}>wants to chat with you</Text></View><TouchableOpacity onPress={() => respondToRequest(request, "accept")} style={styles.acceptButton}><Text style={styles.acceptText}>Accept</Text></TouchableOpacity><TouchableOpacity onPress={() => respondToRequest(request, "reject")} style={styles.rejectButton}><Text style={styles.rejectText}>Reject</Text></TouchableOpacity></View>)}{friendRequests.map((request) => <View key={`friend-${String(request.requestId)}`} style={styles.requestRow}><AvatarWithStatus uri={request.avatar} size={42} online={onlineUserIds.has(String(request._id))} /><View style={styles.requestCopy}><Text style={styles.requestName}>{request.name}</Text><Text style={styles.requestText}>sent you a friend request</Text></View><TouchableOpacity onPress={() => respondToFriendRequest(request, "accept")} style={styles.acceptButton}><Text style={styles.acceptText}>Confirm</Text></TouchableOpacity><TouchableOpacity onPress={() => respondToFriendRequest(request, "decline")} style={styles.rejectButton}><Text style={styles.rejectText}>Delete</Text></TouchableOpacity></View>)}{requests.length === 0 && friendRequests.length === 0 && <Text style={styles.emptyNotifications}>No new requests</Text>}</View></View></Modal>
     </SafeAreaView>
   );
