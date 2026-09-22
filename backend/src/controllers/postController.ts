@@ -100,20 +100,34 @@ export async function toggleLike(req: AuthRequest, res: Response, next: NextFunc
     if (existing.length > 0) await db.query("DELETE FROM post_likes WHERE post_id = ? AND user_id = ?", [postId, req.userId]);
     else await db.query("INSERT INTO post_likes (post_id, user_id) VALUES (?, ?)", [postId, req.userId]);
     const [count] = await db.query<RowDataPacket[]>("SELECT COUNT(*) AS total FROM post_likes WHERE post_id = ?", [postId]);
-    if (postRows.length > 0 && Number(postRows[0].user_id) !== Number(req.userId) && existing.length === 0) notifyUser(postRows[0].user_id, { type: "like", message: "Someone liked your post.", postId });
+    if (postRows.length > 0 && Number(postRows[0].user_id) !== Number(req.userId) && existing.length === 0) {
+      const [[actor]] = await db.query<RowDataPacket[]>("SELECT name FROM users WHERE id = ?", [req.userId]);
+      notifyUser(postRows[0].user_id, { type: "LIKE", senderId: Number(req.userId), entityId: postId, message: `${actor.name} liked your post` });
+    }
     return res.json({ liked: existing.length === 0, likeCount: Number(count[0].total) });
   } catch (error) { return next(error); }
 }
 
 export async function getComments(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const [rows] = await db.query<RowDataPacket[]>(
+    const postId = Number(req.params.postId);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 1000);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const [topLevel] = await db.query<RowDataPacket[]>(
       `SELECT c.id AS _id, c.body, c.parent_comment_id AS parentCommentId, c.created_at AS createdAt, u.id AS user_id, u.name, u.avatar
        FROM post_comments c INNER JOIN users u ON u.id = c.user_id
-       WHERE c.post_id = ? AND u.deleted_at IS NULL ORDER BY c.created_at ASC`,
-      [Number(req.params.postId)],
+       WHERE c.post_id = ? AND c.parent_comment_id IS NULL AND u.deleted_at IS NULL ORDER BY c.created_at ASC LIMIT ? OFFSET ?`,
+      [postId, limit, offset],
     );
-    return res.json(rows.map((row) => ({ _id: row._id, body: row.body, parentCommentId: row.parentCommentId, createdAt: row.createdAt, author: { _id: row.user_id, name: row.name, avatar: row.avatar } })));
+    const [replies] = topLevel.length ? await db.query<RowDataPacket[]>(
+      `SELECT c.id AS _id, c.body, c.parent_comment_id AS parentCommentId, c.created_at AS createdAt, u.id AS user_id, u.name, u.avatar
+       FROM post_comments c INNER JOIN users u ON u.id = c.user_id
+       WHERE c.post_id = ? AND c.parent_comment_id IS NOT NULL AND u.deleted_at IS NULL ORDER BY c.created_at ASC`,
+      [postId],
+    ) : [[] as RowDataPacket[]];
+    const [countRows] = await db.query<RowDataPacket[]>("SELECT COUNT(*) AS total FROM post_comments WHERE post_id = ? AND parent_comment_id IS NULL", [postId]);
+    const format = (row: RowDataPacket) => ({ _id: row._id, body: row.body, parentCommentId: row.parentCommentId, createdAt: row.createdAt, author: { _id: row.user_id, name: row.name, avatar: row.avatar } });
+    return res.json({ comments: [...topLevel, ...replies].map(format), hasMore: offset + topLevel.length < Number(countRows[0]?.total || 0) });
   } catch (error) { return next(error); }
 }
 
@@ -122,9 +136,29 @@ export async function addComment(req: AuthRequest, res: Response, next: NextFunc
     const body = typeof req.body?.body === "string" ? req.body.body.trim() : "";
     const parentCommentId = req.body?.parentCommentId ? Number(req.body.parentCommentId) : null;
     if (!body || body.length > 1000) return res.status(400).json({ message: "Comment must be between 1 and 1000 characters." });
-    const [result] = await db.query<ResultSetHeader>("INSERT INTO post_comments (post_id, user_id, parent_comment_id, body) VALUES (?, ?, ?, ?)", [Number(req.params.postId), req.userId, parentCommentId, body]);
+    const postId = Number(req.params.postId);
+    if (parentCommentId !== null) {
+      const [parent] = await db.query<RowDataPacket[]>("SELECT id FROM post_comments WHERE id = ? AND post_id = ?", [parentCommentId, postId]);
+      if (!parent.length) return res.status(400).json({ message: "Parent comment not found." });
+    }
+    const [result] = await db.query<ResultSetHeader>("INSERT INTO post_comments (post_id, user_id, parent_comment_id, body) VALUES (?, ?, ?, ?)", [postId, req.userId, parentCommentId, body]);
     const [postRows] = await db.query<RowDataPacket[]>("SELECT user_id FROM posts WHERE id = ?", [Number(req.params.postId)]);
-    if (postRows.length > 0 && Number(postRows[0].user_id) !== Number(req.userId)) notifyUser(postRows[0].user_id, { type: "comment", message: "Someone commented on your post.", postId: Number(req.params.postId) });
+    if (postRows.length > 0 && Number(postRows[0].user_id) !== Number(req.userId)) {
+      const [[actor]] = await db.query<RowDataPacket[]>("SELECT name FROM users WHERE id = ?", [req.userId]);
+      notifyUser(postRows[0].user_id, { type: "COMMENT", senderId: Number(req.userId), entityId: postId, message: `${actor.name} commented on your post: '${body.slice(0, 80)}'` });
+    }
     return res.status(201).json({ id: result.insertId });
+  } catch (error) { return next(error); }
+}
+
+export async function deleteComment(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const commentId = Number(req.params.commentId);
+    const [rows] = await db.query<RowDataPacket[]>(`SELECT c.id, c.user_id, p.user_id AS postOwnerId FROM post_comments c JOIN posts p ON p.id = c.post_id WHERE c.id = ? AND p.deleted_at IS NULL`, [commentId]);
+    if (!rows.length) return res.status(404).json({ message: "Comment not found." });
+    const canDelete = Number(rows[0].user_id) === Number(req.userId) || Number(rows[0].postOwnerId) === Number(req.userId);
+    if (!canDelete) return res.status(403).json({ message: "You cannot delete this comment." });
+    await db.query("DELETE FROM post_comments WHERE id = ?", [commentId]);
+    return res.json({ success: true, commentId });
   } catch (error) { return next(error); }
 }

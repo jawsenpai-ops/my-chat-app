@@ -11,7 +11,12 @@ let socketIo: SocketServer | null = null;
 export const emitUserEvent = (userId: number | string, event: string, payload: unknown) => {
   socketIo?.to(`user:${userId}`).emit(event, payload);
 };
-export const notifyUser = (userId: number | string, payload: { type: string; message: string; postId?: number; requestId?: number }) => {
+export const notifyUser = async (userId: number | string, payload: { type: string; message: string; entityId?: number; senderId?: number | string; postId?: number; requestId?: number }) => {
+  if (["FRIEND_REQ", "FRIEND_ACCEPT", "COMMENT", "LIKE"].includes(payload.type) && payload.senderId !== undefined && payload.entityId !== undefined) {
+    try {
+      await db.query("INSERT INTO notifications (recipientId, senderId, type, entityId, message) VALUES (?, ?, ?, ?, ?)", [userId, payload.senderId, payload.type, payload.entityId, payload.message]);
+    } catch { /* Notification delivery must not break the original action. */ }
+  }
   socketIo?.to(`user:${userId}`).emit("notification", payload);
 };
 

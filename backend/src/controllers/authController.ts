@@ -66,14 +66,21 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       return res.status(400).json({ message: "Invalid credentials" });
     }
     const [users] = await db.query<RowDataPacket[]>(
-      "SELECT id, name, email, password, phone, avatar, bio, createdAt, COALESCE(token_version, 0) AS token_version, deleted_at FROM users WHERE email = ?",
+      "SELECT id, name, email, password, phone, avatar, bio, role, createdAt, COALESCE(token_version, 0) AS token_version, deleted_at FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1",
       [email],
     );
-    if (users.length === 0 || users[0].deleted_at || !(await bcrypt.compare(password, users[0].password))) {
-      console.warn("Login failed", { emailDomain: email.split("@")[1] });
+    const account = users[0];
+    const passwordMatches = account && typeof account.password === "string"
+      ? await bcrypt.compare(password, account.password)
+      : false;
+    if (!account || account.deleted_at || !passwordMatches) {
+      console.warn("Login failed", {
+        emailDomain: email.split("@")[1],
+        reason: !account ? "account_not_found" : account.deleted_at ? "account_deleted" : "password_mismatch",
+      });
       return res.status(400).json({ message: "Invalid credentials" });
     }
-    const user = users[0];
+    const user = account;
     const token = signToken(user.id, Number(user.token_version || 0));
     return res.json({
       token,

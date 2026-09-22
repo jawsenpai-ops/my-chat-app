@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "6b6b9658-7f12-4ecf-b997-403334766b8d"
+      }
+    },
+    "android": {
+      "package": "com.vniya.mychatbackend"
+    }
+  }
+}
