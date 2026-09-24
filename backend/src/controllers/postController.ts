@@ -143,10 +143,23 @@ export async function addComment(req: AuthRequest, res: Response, next: NextFunc
     }
     const [result] = await db.query<ResultSetHeader>("INSERT INTO post_comments (post_id, user_id, parent_comment_id, body) VALUES (?, ?, ?, ?)", [postId, req.userId, parentCommentId, body]);
     const [postRows] = await db.query<RowDataPacket[]>("SELECT user_id FROM posts WHERE id = ?", [Number(req.params.postId)]);
-    if (postRows.length > 0 && Number(postRows[0].user_id) !== Number(req.userId)) {
-      const [[actor]] = await db.query<RowDataPacket[]>("SELECT name FROM users WHERE id = ?", [req.userId]);
-      notifyUser(postRows[0].user_id, { type: "COMMENT", senderId: Number(req.userId), entityId: postId, message: `${actor.name} commented on your post: '${body.slice(0, 80)}'` });
+    const [[actor]] = await db.query<RowDataPacket[]>("SELECT name FROM users WHERE id = ?", [req.userId]);
+    const recipients = new Set<number>();
+    if (postRows.length > 0) recipients.add(Number(postRows[0].user_id));
+    if (parentCommentId !== null) {
+      const [[parentComment]] = await db.query<RowDataPacket[]>("SELECT user_id FROM post_comments WHERE id = ?", [parentCommentId]);
+      if (parentComment) recipients.add(Number(parentComment.user_id));
     }
+    await Promise.all([...recipients]
+      .filter((recipientId) => recipientId !== Number(req.userId))
+      .map((recipientId) => notifyUser(recipientId, {
+        type: "COMMENT",
+        senderId: Number(req.userId),
+        entityId: postId,
+        message: parentCommentId === null
+          ? `${actor.name} commented on your post: '${body.slice(0, 80)}'`
+          : `${actor.name} replied to a comment: '${body.slice(0, 80)}'`,
+      })));
     return res.status(201).json({ id: result.insertId });
   } catch (error) { return next(error); }
 }

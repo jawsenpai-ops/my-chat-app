@@ -33,6 +33,7 @@ export async function connectDB() {
       await db.query(`CREATE TABLE IF NOT EXISTS friend_requests (id INT AUTO_INCREMENT PRIMARY KEY, senderId INT NOT NULL, receiverId INT NOT NULL, status ENUM('pending', 'accepted', 'declined', 'cancelled') NOT NULL DEFAULT 'pending', createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, FOREIGN KEY (senderId) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (receiverId) REFERENCES users(id) ON DELETE CASCADE, UNIQUE KEY unique_friend_request_pair (senderId, receiverId), INDEX idx_friend_requests_receiver_status (receiverId, status), INDEX idx_friend_requests_sender_status (senderId, status)) ENGINE=InnoDB`);
       await db.query(`CREATE TABLE IF NOT EXISTS friendships (id INT AUTO_INCREMENT PRIMARY KEY, userId INT NOT NULL, friendId INT NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (friendId) REFERENCES users(id) ON DELETE CASCADE, UNIQUE KEY unique_friendship (userId, friendId), CONSTRAINT chk_friendship_order CHECK (userId < friendId)) ENGINE=InnoDB`);
       await db.query(`CREATE TABLE IF NOT EXISTS blocked_users (blockerId INT NOT NULL, blockedId INT NOT NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (blockerId, blockedId), FOREIGN KEY (blockerId) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (blockedId) REFERENCES users(id) ON DELETE CASCADE) ENGINE=InnoDB`);
+      await db.query(`CREATE TABLE IF NOT EXISTS notifications (id INT AUTO_INCREMENT PRIMARY KEY, recipientId INT NOT NULL, senderId INT NOT NULL, type ENUM('FRIEND_REQ', 'FRIEND_ACCEPT', 'COMMENT', 'LIKE') NOT NULL, entityId INT NOT NULL, message VARCHAR(500) NOT NULL, isRead BOOLEAN NOT NULL DEFAULT FALSE, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (recipientId) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (senderId) REFERENCES users(id) ON DELETE CASCADE, INDEX idx_notifications_recipient_read_created (recipientId, isRead, createdAt), INDEX idx_notifications_entity (entityId)) ENGINE=InnoDB`);
     await verifySecuritySchema();
   } catch (error) {
     console.error("Database startup check failed:", error instanceof Error ? error.message : "Unknown database error");
@@ -47,11 +48,11 @@ async function verifySecuritySchema() {
   const missingColumns = requiredColumns.filter((column) => !availableColumns.has(column));
 
   const [tables] = await db.query<(RowDataPacket & { TABLE_NAME: string })[]>(
-    "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?, ?, ?, ?)",
-    ["email_verification_tokens", "feedback", "posts", "post_likes", "post_comments"],
+    "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN (?, ?, ?, ?, ?, ?)",
+    ["email_verification_tokens", "feedback", "posts", "post_likes", "post_comments", "notifications"],
   );
   const availableTables = new Set(tables.map((table) => table.TABLE_NAME));
-  const missingTables = ["email_verification_tokens", "feedback", "posts", "post_likes", "post_comments"]
+  const missingTables = ["email_verification_tokens", "feedback", "posts", "post_likes", "post_comments", "notifications"]
     .filter((table) => !availableTables.has(table));
 
   if (missingColumns.length > 0 || missingTables.length > 0) {

@@ -11,11 +11,24 @@ let socketIo: SocketServer | null = null;
 export const emitUserEvent = (userId: number | string, event: string, payload: unknown) => {
   socketIo?.to(`user:${userId}`).emit(event, payload);
 };
-export const notifyUser = async (userId: number | string, payload: { type: string; message: string; entityId?: number; senderId?: number | string; postId?: number; requestId?: number }) => {
-  if (["FRIEND_REQ", "FRIEND_ACCEPT", "COMMENT", "LIKE"].includes(payload.type) && payload.senderId !== undefined && payload.entityId !== undefined) {
+type NotificationPayload = {
+  type: string;
+  message: string;
+  entityId?: number;
+  senderId?: number | string;
+};
+
+export const notifyUser = async (userId: number | string, payload: NotificationPayload) => {
+  const persistableTypes = ["FRIEND_REQ", "FRIEND_ACCEPT", "COMMENT", "LIKE"];
+  if (persistableTypes.includes(payload.type) && payload.senderId !== undefined && payload.entityId !== undefined) {
     try {
-      await db.query("INSERT INTO notifications (recipientId, senderId, type, entityId, message) VALUES (?, ?, ?, ?, ?)", [userId, payload.senderId, payload.type, payload.entityId, payload.message]);
-    } catch { /* Notification delivery must not break the original action. */ }
+      await db.query(
+        "INSERT INTO notifications (recipientId, senderId, type, entityId, message) VALUES (?, ?, ?, ?, ?)",
+        [userId, payload.senderId, payload.type, payload.entityId, payload.message],
+      );
+    } catch (error) {
+      console.error("Failed to persist notification", error instanceof Error ? error.message : "Unknown database error");
+    }
   }
   socketIo?.to(`user:${userId}`).emit("notification", payload);
 };
