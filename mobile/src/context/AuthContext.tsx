@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { User } from "../types";
-import { apiCall } from "../api/client";
+import { apiCall, clearAccessToken, getAccessToken, initializeApi, setAccessToken } from "../api/client";
 import { connectSocket, disconnectSocket } from "../api/socket";
 
 interface AuthContextType {
@@ -21,14 +20,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const token = await AsyncStorage.getItem("jwt_token");
+        await initializeApi();
+        const token = await getAccessToken();
         if (token) {
           const userData = await apiCall<User>("/auth/me");
           setUser(userData);
           await connectSocket();
         }
       } catch (err) {
-        await AsyncStorage.removeItem("jwt_token");
+        await clearAccessToken();
       } finally {
         setLoading(false);
       }
@@ -37,13 +37,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const login = async (token: string, newUser: User) => {
-    await AsyncStorage.setItem("jwt_token", token);
+    await setAccessToken(token);
     setUser(newUser);
     await connectSocket();
   };
 
   const logout = async () => {
-    await AsyncStorage.removeItem("jwt_token");
+    await clearAccessToken();
     setUser(null);
     disconnectSocket();
   };

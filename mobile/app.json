@@ -25,6 +25,7 @@
       }
     },
     "extra": {
+      "gatewayOrigin": "",
       "eas": {
         "projectId": "d6a11693-71b0-4641-ad0f-1ded8ebb22e7"
       }

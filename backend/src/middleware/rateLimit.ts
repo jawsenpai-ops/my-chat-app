@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express";
+import { rateLimit } from "express-rate-limit";
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -84,10 +85,12 @@ export const createRateLimiter = (options: {
   };
 };
 
-export const apiRateLimiter = createRateLimiter({
-  name: "api",
-  limit: 120,
+export const apiRateLimiter = rateLimit({
   windowMs: 60_000,
+  limit: 120,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { message: "Too many requests. Please try again later." },
 });
 
 export const loginRateLimiter = createRateLimiter({

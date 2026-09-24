@@ -1,12 +1,11 @@
 import { io, Socket } from "socket.io-client";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BASE_URL } from "./client";
+import { getAccessToken, getGatewayOrigin, initializeApi } from "./client";
 
 let socket: Socket | null = null;
 
 export const getSocket = (): Socket => {
   if (!socket) {
-    socket = io(BASE_URL, {
+    socket = io(getGatewayOrigin(), {
       autoConnect: false,
       transports: ["websocket", "polling"],
     });
@@ -15,7 +14,8 @@ export const getSocket = (): Socket => {
 };
 
 export const connectSocket = async () => {
-  const token = await AsyncStorage.getItem("jwt_token");
+  await initializeApi();
+  const token = await getAccessToken();
   const s = getSocket();
   if (token) {
     s.auth = { token };
