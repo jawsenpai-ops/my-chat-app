@@ -102,7 +102,7 @@ export async function toggleLike(req: AuthRequest, res: Response, next: NextFunc
     const [count] = await db.query<RowDataPacket[]>("SELECT COUNT(*) AS total FROM post_likes WHERE post_id = ?", [postId]);
     if (postRows.length > 0 && Number(postRows[0].user_id) !== Number(req.userId) && existing.length === 0) {
       const [[actor]] = await db.query<RowDataPacket[]>("SELECT name FROM users WHERE id = ?", [req.userId]);
-      notifyUser(postRows[0].user_id, { type: "LIKE", senderId: Number(req.userId), entityId: postId, message: `${actor.name} liked your post` });
+      await notifyUser(postRows[0].user_id, { type: "LIKE", senderId: Number(req.userId), entityId: postId, message: `${actor.name} liked your post` });
     }
     return res.json({ liked: existing.length === 0, likeCount: Number(count[0].total) });
   } catch (error) { return next(error); }

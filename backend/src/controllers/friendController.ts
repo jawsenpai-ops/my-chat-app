@@ -47,7 +47,7 @@ export async function sendFriendRequest(req: AuthRequest, res: Response, next: N
     const [[sender]] = await db.query<RowDataPacket[]>("SELECT id AS _id, name, avatar FROM users WHERE id = ?", [senderId]);
     const [[request]] = await db.query<RowDataPacket[]>("SELECT id FROM friend_requests WHERE senderId = ? AND receiverId = ? AND status = 'pending'", [senderId, receiverId]);
     emitUserEvent(receiverId, "friend-request-received", { requestId: request.id, from: sender });
-    notifyUser(receiverId, { type: "FRIEND_REQ", senderId, entityId: senderId, message: `${sender.name} sent you a friend request` });
+    await notifyUser(receiverId, { type: "FRIEND_REQ", senderId, entityId: senderId, message: `${sender.name} sent you a friend request` });
     return res.status(201).json({ success: true, message: "Friend request sent" });
   } catch (error) { return next(error); }
 }
@@ -74,7 +74,7 @@ async function acceptFriendRequestById(requestId: number, receiverId: number, re
     await connection.commit();
     const [[receiver]] = await db.query<RowDataPacket[]>("SELECT id AS _id, name, avatar FROM users WHERE id = ?", [receiverId]);
     emitUserEvent(Number(request.senderId), "friend-request-accepted", { by: receiver });
-    notifyUser(Number(request.senderId), { type: "FRIEND_ACCEPT", senderId: receiverId, entityId: receiverId, message: `${receiver.name} accepted your friend request` });
+    await notifyUser(Number(request.senderId), { type: "FRIEND_ACCEPT", senderId: receiverId, entityId: receiverId, message: `${receiver.name} accepted your friend request` });
     return res.json({ success: true, message: "Friend request accepted" });
   } catch (error) { await connection.rollback(); return next(error); } finally { connection.release(); }
 }
