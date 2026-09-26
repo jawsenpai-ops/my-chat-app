@@ -9,6 +9,7 @@ import { AppColors } from "../theme/colors";
 import { BottomTabBar } from "../components/BottomTabBar";
 import { PixelHourglassLoader } from "../components/PixelHourglassLoader";
 import { CreatePostComposer, SelectedImage } from "../components/CreatePostComposer";
+import { readCachedPosts, saveCachedPosts } from "../api/offlinePostCache";
 import { FriendRelationship, Post, PostComment, PostCommentsResponse, RootStackParamList, User } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Freedom">;
@@ -65,10 +66,21 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   const socket = getSocket();
 
   const loadPosts = async () => {
-    try { setPosts(await apiCall<Post[]>("/posts")); } catch (error: any) { Alert.alert("Could not load posts", error.message); }
-    finally { setLoading(false); }
+    const cachedPosts = await readCachedPosts();
+    if (cachedPosts.length) setPosts(cachedPosts);
+
+    try {
+      const freshPosts = await apiCall<Post[]>("/posts");
+      setPosts(freshPosts);
+      await saveCachedPosts(freshPosts);
+    } catch (error: any) {
+      if (!cachedPosts.length) Alert.alert("Could not load posts", error.message);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
-  const refresh = async () => { setRefreshing(true); await loadPosts(); setRefreshing(false); };
+  const refresh = async () => { setRefreshing(true); await loadPosts(); };
 
   useEffect(() => {
     loadPosts();

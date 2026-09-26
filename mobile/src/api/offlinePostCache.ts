@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Post, PostComment } from "../types";
 
+const postsKey = "post-feed-cache:v1";
 const postKey = (postId: string | number) => `post-cache:v1:${encodeURIComponent(String(postId))}`;
 const commentsKey = (postId: string | number) => `post-comments-cache:v1:${encodeURIComponent(String(postId))}`;
 
@@ -11,6 +12,19 @@ async function readJson<T>(key: string): Promise<T | null> {
     return JSON.parse(value) as T;
   } catch {
     return null;
+  }
+}
+
+export async function readCachedPosts(): Promise<Post[]> {
+  const value = await readJson<Post[]>(postsKey);
+  return Array.isArray(value) ? value : [];
+}
+
+export async function saveCachedPosts(posts: Post[]) {
+  try {
+    await AsyncStorage.setItem(postsKey, JSON.stringify(posts.slice(0, 200)));
+  } catch (error) {
+    console.warn("Unable to save offline post feed", error);
   }
 }
 

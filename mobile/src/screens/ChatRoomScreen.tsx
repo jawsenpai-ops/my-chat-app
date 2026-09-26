@@ -139,15 +139,21 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
     });
     if (!socket.connected) {
       setMessages((current) => current.map((item) => item.clientMessageId === clientMessageId ? { ...item, status: "failed" } : item));
-    } else {
-      socket.timeout(10_000).emit("send-message", payload, (timeoutError: Error | null, result?: { ok: boolean; message?: Message }) => {
-        if (timeoutError || !result?.ok || !result.message) {
-          setMessages((current) => current.map((item) => item.clientMessageId === clientMessageId && item.status === "pending" ? { ...item, status: "failed" } : item));
-          return;
-        }
-        reconcileMessage(result.message);
-      });
+      return;
     }
+
+    const timeout = setTimeout(() => {
+      setMessages((current) => current.map((item) => item.clientMessageId === clientMessageId && item.status === "pending" ? { ...item, status: "failed" } : item));
+    }, 10_000);
+
+    socket.emit("send-message", payload, (ack: { ok?: boolean; message?: Message; error?: string } | undefined) => {
+      clearTimeout(timeout);
+      if (!ack || !ack.ok || !ack.message) {
+        setMessages((current) => current.map((item) => item.clientMessageId === clientMessageId && item.status === "pending" ? { ...item, status: "failed" } : item));
+        return;
+      }
+      reconcileMessage(ack.message);
+    });
 
     if (clearComposer) {
       setText("");
