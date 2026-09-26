@@ -104,6 +104,7 @@ export type RootStackParamList = {
   ChatRoom: { chatId: string | number; participant: Pick<User, "_id" | "name" | "avatar"> };
   Profile: { userId?: number | string; online?: boolean } | undefined;
   Freedom: { openComposer?: boolean; highlightPostId?: number | string } | undefined;
+  Post: { postId: number | string };
   Notifications: undefined;
   CropProfilePicture: { uri: string; width: number; height: number };
   AdminDashboard: undefined;

@@ -31,7 +31,7 @@ export const NotificationScreen: React.FC<Props> = ({ navigation }) => {
     }
     if (item.type === "FRIEND_REQ") navigation.navigate("Profile", { userId: item.sender._id });
     else if (item.type === "FRIEND_ACCEPT") navigation.navigate("Profile", { userId: item.sender._id });
-    else navigation.navigate("Freedom", { highlightPostId: item.entityId });
+    else navigation.navigate("Post", { postId: item.entityId });
   };
 
   return (

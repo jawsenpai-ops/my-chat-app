@@ -10,6 +10,7 @@ import { ChatRoomScreen } from "./src/screens/ChatRoomScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { CropProfilePictureScreen } from "./src/screens/CropProfilePictureScreen";
 import { FreedomScreen } from "./src/screens/FreedomScreen";
+import { PostScreen } from "./src/screens/PostScreen";
 import { AdminDashboardScreen } from "./src/screens/AdminDashboardScreen";
 import { NotificationScreen } from "./src/screens/NotificationScreen";
 import { PixelHourglassLoader } from "./src/components/PixelHourglassLoader";
@@ -43,6 +44,7 @@ const AppNavigator: React.FC<{ pendingChat: ChatNotificationTarget | null; clear
           <Stack.Screen name="ChatRoom" component={ChatRoomScreen} />
           <Stack.Screen name="Profile" component={ProfileScreen} />
           <Stack.Screen name="Freedom" component={FreedomScreen} />
+          <Stack.Screen name="Post" component={PostScreen} />
           <Stack.Screen name="CropProfilePicture" component={CropProfilePictureScreen} />
           <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
         </>
