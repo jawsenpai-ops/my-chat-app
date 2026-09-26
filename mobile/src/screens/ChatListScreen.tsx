@@ -9,6 +9,7 @@ import { getSocket } from "../api/socket";
 import { AppColors } from "../theme/colors";
 import { BottomTabBar } from "../components/BottomTabBar";
 import { AvatarWithStatus } from "../components/AvatarWithStatus";
+import { readCachedChats, saveCachedChats } from "../api/offlineChatCache";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ChatList">;
 
@@ -25,7 +26,11 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const socket = getSocket();
 
   const loadData = async () => {
+    const currentUserId = String(user?._id || (user as any)?.id || "");
     try {
+      const cachedChats = currentUserId ? await readCachedChats(currentUserId) : [];
+      if (cachedChats.length > 0) setChats(cachedChats);
+
       const [chatData, userData, requestData, incomingFriends, friendData] = await Promise.all([
         apiCall<Chat[]>("/chats"),
         apiCall<User[]>("/users"),
@@ -34,10 +39,10 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         apiCall<User[]>("/friends"),
       ]);
       setChats(chatData);
+      if (currentUserId) void saveCachedChats(currentUserId, chatData);
       setRequests(requestData);
       setFriendRequests(incomingFriends);
 
-      const currentUserId = user?._id || (user as any)?.id;
       const filteredUsers = userData.filter((u) => {
         const uId = u._id || (u as any).id;
         return String(uId) !== String(currentUserId) && (u.isPartner === true || friendData.some((friend) => String(friend._id) === String(uId)));
@@ -47,6 +52,11 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
       console.error(err);
     }
   };
+
+  useEffect(() => {
+    const currentUserId = String(user?._id || (user as any)?.id || "");
+    if (currentUserId && chats.length > 0) void saveCachedChats(currentUserId, chats);
+  }, [chats, user]);
 
   useEffect(() => {
     loadData();

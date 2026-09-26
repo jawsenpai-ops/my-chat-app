@@ -7,6 +7,7 @@ import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { getSocket } from "../api/socket";
 import { AppColors } from "../theme/colors";
+import { mergeMessages, readCachedMessages, saveCachedMessages } from "../api/offlineChatCache";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ChatRoom">;
 
@@ -22,9 +23,26 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const { user } = useAuth();
   const [isFriend, setIsFriend] = useState(false);
   const [partnerOnline, setPartnerOnline] = useState(false);
+  const [cacheReadyForKey, setCacheReadyForKey] = useState<string | null>(null);
+  const userId = String(user?._id || (user as any)?.id || "");
+  const currentCacheKey = userId ? `${userId}:${chatId}` : null;
+
+  const reconcileMessage = (message: Message) => {
+    setMessages((current) => {
+      const matchingIndex = current.findIndex((item) =>
+        (message.clientMessageId && item.clientMessageId === message.clientMessageId) ||
+        String(item._id || (item as any).id) === String(message._id || (message as any).id),
+      );
+      if (matchingIndex < 0) return [...current, { ...message, status: "sent" }];
+      return current.map((item, index) => index === matchingIndex ? { ...message, status: "sent" } : item);
+    });
+  };
 
   useEffect(() => {
     const socket = getSocket();
+    let active = true;
+    setMessages([]);
+    setCacheReadyForKey(null);
 
     // Track the partner's online status for the header.
     const handleOnlineUsers = ({ userIds }: { userIds: string[] }) => setPartnerOnline(userIds.map(String).includes(String(participant._id)));
@@ -40,12 +58,22 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
       .catch(() => setIsFriend(false));
 
     const fetchMessages = async () => {
+      const cachedMessages = userId
+        ? (await readCachedMessages(userId, String(chatId))).map((message) =>
+          message.status === "pending" ? { ...message, status: "failed" as const } : message,
+        )
+        : [];
+      if (!active) return;
+      setMessages((current) => mergeMessages(current, cachedMessages));
+      if (currentCacheKey) setCacheReadyForKey(currentCacheKey);
+
       try {
         const data = await apiCall<Message[]>(`/messages/chat/${chatId}`);
-        setMessages(data);
+        if (!active) return;
+        setMessages((current) => mergeMessages(current, data));
         getSocket().emit("chat-read", String(chatId));
       } catch (err) {
-        console.error("Failed to fetch messages:", err);
+        if (cachedMessages.length === 0) console.warn("Message history is unavailable offline.");
       }
     };
 
@@ -54,22 +82,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const handleNewMessage = (msg: Message) => {
       if (String(msg.chat) === String(chatId)) {
-        setMessages((prev) => {
-          const msgDisplay = msg.displayText ?? msg.text;
-
-          const isDuplicate = prev.some((m) => {
-            const mId = m._id || (m as any).id;
-            const msgId = msg._id || (msg as any).id;
-            const mDisplay = m.displayText ?? m.text;
-            const msgDisplayText = msg.displayText ?? msg.text;
-
-            if (mId && msgId) return String(mId) === String(msgId);
-            return mDisplay === msgDisplayText && String(m.sender) === String(msg.sender);
-          });
-
-          if (isDuplicate) return prev;
-          return [...prev, msg];
-        });
+        setMessages((current) => mergeMessages(current, [{ ...msg, status: "sent" }]));
       }
     };
     const handleMessageDeleted = ({ messageId }: { messageId: string | number }) => {
@@ -80,6 +93,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
     socket.on("message-deleted", handleMessageDeleted);
 
     return () => {
+      active = false;
       socket.emit("leave-chat", String(chatId));
       socket.off("new-message", handleNewMessage);
       socket.off("message-deleted", handleMessageDeleted);
@@ -87,20 +101,58 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
       socket.off("user-online", handleUserOnline);
       socket.off("user-offline", handleUserOffline);
     };
-  }, [chatId, participant._id]);
+  }, [chatId, participant._id, userId, currentCacheKey]);
 
-  const sendMessage = () => {
-    if (!text.trim()) return;
+  useEffect(() => {
+    if (currentCacheKey !== cacheReadyForKey || !userId) return;
+    void saveCachedMessages(userId, String(chatId), messages);
+  }, [messages, cacheReadyForKey, currentCacheKey, userId, chatId]);
 
+  const sendMessage = (body = text.trim(), clientMessageId = `${Date.now()}-${Math.random().toString(36).slice(2)}`, replyToMessage = replyTo, clearComposer = true) => {
+    if (!body) return;
     const socket = getSocket();
-    socket.emit("send-message", {
+    const payload = {
       chatId: String(chatId),
-      text: text.trim(),
-      replyToId: replyTo?._id || null,
-    });
+      text: body,
+      replyToId: replyToMessage?._id || null,
+      clientMessageId,
+    };
+    const pendingMessage: Message = {
+      _id: clientMessageId,
+      clientMessageId,
+      chat: chatId,
+      text: body,
+      createdAt: new Date().toISOString(),
+      status: "pending",
+      sender: { _id: user?._id || "", name: user?.name || "", avatar: user?.avatar || "" },
+      replyTo: replyToMessage ? {
+        _id: replyToMessage._id,
+        text: replyToMessage.displayText ?? replyToMessage.text,
+        senderName: replyToMessage.sender?.name || replyToMessage.replyTo?.senderName || "Message",
+      } : null,
+    };
 
-    setText("");
-    setReplyTo(null);
+    setMessages((current) => {
+      const existing = current.findIndex((item) => item.clientMessageId === clientMessageId);
+      if (existing < 0) return [...current, pendingMessage];
+      return current.map((item, index) => index === existing ? { ...item, status: "pending" } : item);
+    });
+    if (!socket.connected) {
+      setMessages((current) => current.map((item) => item.clientMessageId === clientMessageId ? { ...item, status: "failed" } : item));
+    } else {
+      socket.timeout(10_000).emit("send-message", payload, (timeoutError: Error | null, result?: { ok: boolean; message?: Message }) => {
+        if (timeoutError || !result?.ok || !result.message) {
+          setMessages((current) => current.map((item) => item.clientMessageId === clientMessageId && item.status === "pending" ? { ...item, status: "failed" } : item));
+          return;
+        }
+        reconcileMessage(result.message);
+      });
+    }
+
+    if (clearComposer) {
+      setText("");
+      setReplyTo(null);
+    }
   };
 
   const deleteMessage = (message: Message) => {
@@ -159,6 +211,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
           contentContainerStyle={styles.listContent}
           data={messages}
           keyExtractor={(item, index) => {
+            if (item.clientMessageId) return `msg-${item.clientMessageId}`;
             const id = item._id || (item as any).id;
             return id ? `msg-${id}` : `msg-fallback-${index}-${item.text.slice(0, 5)}`;
           }}
@@ -168,10 +221,13 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
             const isMe = String(senderId) === String(currentUserId);
 
             return (
-              <TouchableOpacity onLongPress={() => setSelectedMessage(item)} delayLongPress={500} style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble, item.pinned && styles.pinnedBubble]}>
+              <TouchableOpacity onLongPress={() => item.status !== "pending" && item.status !== "failed" && setSelectedMessage(item)} delayLongPress={500} style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble, item.pinned && styles.pinnedBubble]}>
                 {item.replyTo && <View style={styles.replyQuote}><Text style={styles.replyQuoteName}>{item.replyTo.senderName}</Text><Text style={styles.replyQuoteText} numberOfLines={1}>{item.replyTo.text}</Text></View>}
                 <Text style={isMe ? styles.myText : styles.otherText}>{item.displayText ?? item.text}</Text>
                 {item.pinned && <Text style={isMe ? styles.pinMyText : styles.pinText}>Pinned</Text>}
+                {isMe && item.status === "pending" && <Text style={styles.messageStatus}>◷ Sending</Text>}
+                {isMe && item.status === "sent" && <Text style={styles.messageStatus}>✓</Text>}
+                {isMe && item.status === "failed" && <TouchableOpacity onPress={() => sendMessage(item.text, item.clientMessageId, item.replyTo ? ({ _id: item.replyTo._id, text: item.replyTo.text, sender: { _id: "", name: item.replyTo.senderName, avatar: "" } } as Message) : null, false)} accessibilityRole="button"><Text style={styles.retryText}>Failed · Retry</Text></TouchableOpacity>}
               </TouchableOpacity>
             );
           }}
@@ -186,7 +242,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
             onChangeText={setText}
             placeholderTextColor={AppColors.placeholder}
           />
-          <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
+          <TouchableOpacity style={styles.sendBtn} onPress={() => sendMessage()}>
             <Text style={styles.sendText}>Send</Text>
           </TouchableOpacity>
         </View>
@@ -255,6 +311,8 @@ const styles = StyleSheet.create({
   pinnedBubble: { borderWidth: 2, borderColor: AppColors.buttonInner },
   pinText: { color: AppColors.buttonInner, fontSize: 10, marginTop: 4, fontWeight: "700" },
   pinMyText: { color: AppColors.white, fontSize: 10, marginTop: 4, fontWeight: "700" },
+  messageStatus: { color: "rgba(255,255,255,0.7)", fontSize: 10, marginTop: 4, alignSelf: "flex-end" },
+  retryText: { color: "#ffd6d2", fontSize: 11, marginTop: 4, fontWeight: "700", alignSelf: "flex-end" },
   replyQuote: { borderLeftWidth: 3, borderLeftColor: AppColors.buttonInner, paddingLeft: 8, marginBottom: 6, maxWidth: 220 },
   replyQuoteName: { color: AppColors.buttonInner, fontSize: 11, fontWeight: "700" },
   replyQuoteText: { color: "rgba(255,255,255,0.7)", fontSize: 11, marginTop: 2 },

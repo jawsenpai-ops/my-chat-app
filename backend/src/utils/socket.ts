@@ -5,6 +5,7 @@ import { db } from "../config/database";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { decryptText, encryptText } from "./crypto"; // 👈 ၁။ encryptText Import ထည့်ထားပါသည်
 import { rateLimitStore } from "../middleware/rateLimit";
+import { sendExpoPush } from "./pushService";
 
 export const onlineUsers: Map<string, string> = new Map();
 let socketIo: SocketServer | null = null;
@@ -154,8 +155,14 @@ export const initializeSocket = (httpServer: HttpServer) => {
       }
     });
 
-    socket.on("send-message", async (data: { chatId: string; text: string; replyToId?: string | number | null }) => {
-      if (!consumeSocketLimit(socket, userId, "send-message", 30, 60_000)) return;
+    socket.on("send-message", async (
+      data: { chatId: string; text: string; replyToId?: string | number | null; clientMessageId?: string },
+      acknowledge?: (result: { ok: boolean; message?: Record<string, unknown>; error?: string }) => void,
+    ) => {
+      if (!consumeSocketLimit(socket, userId, "send-message", 30, 60_000)) {
+        acknowledge?.({ ok: false, error: SOCKET_ERROR_MESSAGE });
+        return;
+      }
       try {
         if (
           !data ||
@@ -167,10 +174,16 @@ export const initializeSocket = (httpServer: HttpServer) => {
           data.text.length > 4_000
         ) {
           socket.emit("socket-error", { message: "Invalid message" });
+          acknowledge?.({ ok: false, error: "Invalid message" });
           return;
         }
 
-        const { chatId, text } = data;
+        const { chatId, text, clientMessageId } = data;
+        if (clientMessageId !== undefined && (typeof clientMessageId !== "string" || clientMessageId.length < 1 || clientMessageId.length > 100)) {
+          socket.emit("socket-error", { message: "Invalid message ID" });
+          acknowledge?.({ ok: false, error: "Invalid message ID" });
+          return;
+        }
         const replyToId = data.replyToId ? Number(data.replyToId) : null;
 
         const [chatAccess] = await db.query<RowDataPacket[]>(
@@ -180,6 +193,7 @@ export const initializeSocket = (httpServer: HttpServer) => {
 
         if (chatAccess.length === 0) {
           socket.emit("socket-error", { message: "Chat not found" });
+          acknowledge?.({ ok: false, error: "Chat not found" });
           return;
         }
 
@@ -189,29 +203,43 @@ export const initializeSocket = (httpServer: HttpServer) => {
            WHERE r.sender_id = ? AND r.recipient_id = other.userId AND r.status = 'rejected' AND r.blocked_until > NOW()`,
           [chatId, userId, userId],
         );
-        if (blockedRequests.length > 0) { socket.emit("socket-error", { message: "You cannot message this user for one hour." }); return; }
+        if (blockedRequests.length > 0) {
+          const error = "You cannot message this user for one hour.";
+          socket.emit("socket-error", { message: error });
+          acknowledge?.({ ok: false, error });
+          return;
+        }
 
         if (replyToId !== null) {
           const [replyAccess] = await db.query<RowDataPacket[]>(
             "SELECT m.id FROM messages m JOIN chat_participants cp ON cp.chatId = m.chatId AND cp.userId = ? WHERE m.id = ? AND m.chatId = ? AND m.deleted_at IS NULL",
             [userId, replyToId, chatId],
           );
-          if (replyAccess.length === 0) { socket.emit("socket-error", { message: "Reply message not found" }); return; }
+          if (replyAccess.length === 0) {
+            socket.emit("socket-error", { message: "Reply message not found" });
+            acknowledge?.({ ok: false, error: "Reply message not found" });
+            return;
+          }
         }
 
-        // 👈 ၂။ DB ထဲ မသိမ်းမီ Plain text ကို Encrypt လုပ်ပါသည်
         const encryptedText = encryptText(text);
 
         const [msgResult] = await db.query<ResultSetHeader>(
-          "INSERT INTO messages (chatId, senderId, reply_to_id, text) VALUES (?, ?, ?, ?)",
-          [chatId, userId, replyToId, encryptedText] // 👈 Encrypted text ကို DB ထဲ သို့ ထည့်သည်
+          `INSERT INTO messages (chatId, senderId, reply_to_id, text, client_message_id)
+           VALUES (?, ?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)`,
+          [chatId, userId, replyToId, encryptedText, clientMessageId || null],
         );
 
         const messageId = msgResult.insertId;
 
-        await db.query(
-          "UPDATE chats SET lastMessageAt = NOW(), lastMessageId = ? WHERE id = ?",
-          [messageId, chatId]
+        if (msgResult.affectedRows === 1) {
+          await db.query("UPDATE chats SET lastMessageAt = NOW(), lastMessageId = ? WHERE id = ?", [messageId, chatId]);
+        }
+
+        const [storedMessages] = await db.query<RowDataPacket[]>(
+          "SELECT text, createdAt, reply_to_id AS replyToId FROM messages WHERE id = ?",
+          [messageId],
         );
 
         const [sender] = await db.query<RowDataPacket[]>(
@@ -219,33 +247,56 @@ export const initializeSocket = (httpServer: HttpServer) => {
           [userId]
         );
 
-        // 👈 ၃။ Socket မှတစ်ဆင့် Mobile App များကို ပို့သည့်အခါ Screen ပေါ်ချက်ချင်းပေါ်စေရန် Plain text တိုင်း ပို့ပေးပါသည်
         let replyTo = null;
-        if (replyToId !== null) {
-          const [replyRows] = await db.query<RowDataPacket[]>("SELECT m.id, m.text, u.name AS senderName FROM messages m JOIN users u ON u.id = m.senderId WHERE m.id = ?", [replyToId]);
+        const storedReplyToId = storedMessages[0]?.replyToId;
+        if (storedReplyToId !== null && storedReplyToId !== undefined) {
+          const [replyRows] = await db.query<RowDataPacket[]>("SELECT m.id, m.text, u.name AS senderName FROM messages m JOIN users u ON u.id = m.senderId WHERE m.id = ?", [storedReplyToId]);
           if (replyRows.length > 0) replyTo = { _id: replyRows[0].id, text: decryptText(replyRows[0].text), senderName: replyRows[0].senderName };
         }
         const formattedMessage = {
           _id: messageId,
           chat: chatId,
-          text: text, 
+          text: decryptText(storedMessages[0].text),
           sender: sender[0],
-          createdAt: new Date().toISOString(),
+          createdAt: storedMessages[0].createdAt,
           replyTo,
+          ...(clientMessageId ? { clientMessageId } : {}),
         };
 
         io.to(`chat:${chatId}`).emit("new-message", formattedMessage);
 
+        acknowledge?.({ ok: true, message: formattedMessage });
+
         const [participants] = await db.query<RowDataPacket[]>(
-          "SELECT userId FROM chat_participants WHERE chatId = ?",
+          `SELECT u.id AS userId, u.pushToken
+           FROM chat_participants cp JOIN users u ON u.id = cp.userId
+           WHERE cp.chatId = ?`,
           [chatId]
         );
 
         for (const p of participants) {
           io.to(`user:${p.userId}`).emit("new-message", formattedMessage);
+          if (String(p.userId) !== userId && typeof p.pushToken === "string" && p.pushToken) {
+            const recipientSockets = await io.in(`user:${p.userId}`).fetchSockets();
+            if (recipientSockets.length === 0) {
+              const preview = formattedMessage.text.length > 120 ? `${formattedMessage.text.slice(0, 117)}...` : formattedMessage.text;
+              const senderAvatar = typeof sender[0]?.avatar === "string" && sender[0].avatar.startsWith("https://") && sender[0].avatar.length <= 500
+                ? sender[0].avatar
+                : "";
+              void sendExpoPush(p.pushToken, sender[0]?.name || "New message", preview, {
+                type: "chat-message",
+                chatId: String(chatId),
+                senderId: String(userId),
+                senderName: String(sender[0]?.name || "Chat"),
+                senderAvatar,
+                message: preview,
+              });
+            }
+          }
         }
       } catch (error) {
         socket.emit("socket-error", { message: "Failed to send message" });
+        acknowledge?.({ ok: false, error: "Failed to send message" });
       }
     });
 

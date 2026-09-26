@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 import { User } from "../types";
 import { apiCall, clearAccessToken, getAccessToken, initializeApi, setAccessToken } from "../api/client";
 import { connectSocket, disconnectSocket } from "../api/socket";
+import { clearPushTokenFromBackend, syncPushTokenWithBackend } from "../api/pushNotificationService";
 
 interface AuthContextType {
   user: User | null;
@@ -26,6 +27,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const userData = await apiCall<User>("/auth/me");
           setUser(userData);
           await connectSocket();
+          void syncPushTokenWithBackend().catch((error) => console.warn("Push token registration failed", error));
         }
       } catch (err) {
         await clearAccessToken();
@@ -40,9 +42,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await setAccessToken(token);
     setUser(newUser);
     await connectSocket();
+    void syncPushTokenWithBackend().catch((error) => console.warn("Push token registration failed", error));
   };
 
   const logout = async () => {
+    await clearPushTokenFromBackend().catch(() => undefined);
     await clearAccessToken();
     setUser(null);
     disconnectSocket();

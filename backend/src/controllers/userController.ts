@@ -69,3 +69,25 @@ export async function getPublicProfile(req: AuthRequest, res: Response, next: Ne
     return res.json(users[0]);
   } catch (error) { return next(error); }
 }
+
+export async function savePushToken(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const pushToken = req.body?.pushToken;
+    if (typeof pushToken !== "string" || pushToken.length > 255 || !/^ExponentPushToken\[.+\]$/.test(pushToken)) {
+      return res.status(400).json({ message: "Invalid Expo push token." });
+    }
+    await db.query("UPDATE users SET pushToken = ? WHERE id = ? AND deleted_at IS NULL", [pushToken, req.userId]);
+    return res.json({ message: "Push token saved." });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function clearPushToken(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    await db.query("UPDATE users SET pushToken = NULL WHERE id = ?", [req.userId]);
+    return res.json({ message: "Push token cleared." });
+  } catch (error) {
+    return next(error);
+  }
+}

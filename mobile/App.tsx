@@ -1,6 +1,7 @@
-import React from "react";
-import { NavigationContainer } from "@react-navigation/native";
+import { createNavigationContainerRef, NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import React, { useEffect, useState } from "react";
+import * as Notifications from "expo-notifications";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
 import { LoginScreen } from "./src/screens/LoginScreen";
 import { RegisterScreen } from "./src/screens/RegisterScreen";
@@ -14,11 +15,20 @@ import { NotificationScreen } from "./src/screens/NotificationScreen";
 import { PixelHourglassLoader } from "./src/components/PixelHourglassLoader";
 import { RootStackParamList } from "./src/types";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+import { ChatNotificationTarget, getChatTargetFromNotification, requestPushPermissionsAndGetToken } from "./src/api/pushNotificationService";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
-const AppNavigator = () => {
+const AppNavigator: React.FC<{ pendingChat: ChatNotificationTarget | null; clearPendingChat: () => void }> = ({ pendingChat, clearPendingChat }) => {
   const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (user && !loading && pendingChat && navigationRef.isReady()) {
+      navigationRef.navigate("ChatRoom", pendingChat);
+      clearPendingChat();
+    }
+  }, [user, loading, pendingChat, clearPendingChat]);
 
   if (loading) {
     return <PixelHourglassLoader />;
@@ -47,11 +57,27 @@ const AppNavigator = () => {
 };
 
 export default function App() {
+  const [pendingChat, setPendingChat] = useState<ChatNotificationTarget | null>(null);
+
+  useEffect(() => {
+    void requestPushPermissionsAndGetToken().catch((error) => console.warn("Push permission setup failed", error));
+    const handleResponse = (response: Notifications.NotificationResponse) => {
+      const target = getChatTargetFromNotification(response);
+      if (target) setPendingChat(target);
+      void Notifications.clearLastNotificationResponseAsync();
+    };
+    const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) handleResponse(response);
+    });
+    return () => subscription.remove();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <NavigationContainer>
-          <AppNavigator />
+        <NavigationContainer ref={navigationRef}>
+          <AppNavigator pendingChat={pendingChat} clearPendingChat={() => setPendingChat(null)} />
         </NavigationContainer>
       </AuthProvider>
     </SafeAreaProvider>

@@ -35,6 +35,7 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
         m.createdAt,
         m.pinned_at AS pinnedAt,
         m.reply_to_id AS replyToId,
+        m.client_message_id AS clientMessageId,
         replied.text AS replyText,
         replyUser.name AS replySenderName,
         m.chatId AS chat,
@@ -54,6 +55,7 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
 
     const formattedMessages = rows.map((row) => ({
       _id: row._id,
+      clientMessageId: row.clientMessageId || undefined,
       chat: row.chat,
       text: decryptText(row.text), // DB က ရလာတဲ့ Encrypted Text ကို Decrypt ပြန်လုပ်ပေးခြင်း
       createdAt: row.createdAt,

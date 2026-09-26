@@ -12,10 +12,12 @@ export interface User {
 
 export interface Message {
   _id: number | string;
+  clientMessageId?: string;
   chat: number | string;
   text: string;
   displayText?: string;
   createdAt: string;
+  status?: "pending" | "sent" | "failed";
   pinned?: boolean;
   replyTo?: { _id: number | string; text: string; senderName: string } | null;
   sender: {
@@ -99,7 +101,7 @@ export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   ChatList: undefined;
-  ChatRoom: { chatId: string | number; participant: User };
+  ChatRoom: { chatId: string | number; participant: Pick<User, "_id" | "name" | "avatar"> };
   Profile: { userId?: number | string; online?: boolean } | undefined;
   Freedom: { openComposer?: boolean; highlightPostId?: number | string } | undefined;
   Notifications: undefined;
