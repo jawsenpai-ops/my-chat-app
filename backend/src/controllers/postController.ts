@@ -148,21 +148,50 @@ export async function getComments(req: AuthRequest, res: Response, next: NextFun
     const postId = Number(req.params.postId);
     const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 1000);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
-    const [topLevel] = await db.query<RowDataPacket[]>(
-      `SELECT c.id AS _id, c.body, c.parent_comment_id AS parentCommentId, c.created_at AS createdAt, u.id AS user_id, u.name, u.avatar
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT c.id AS _id, c.post_id AS postId, c.body, c.parent_comment_id AS parentCommentId, c.created_at AS createdAt, u.id AS user_id, u.name, u.avatar
        FROM post_comments c INNER JOIN users u ON u.id = c.user_id
-       WHERE c.post_id = ? AND c.parent_comment_id IS NULL AND u.deleted_at IS NULL ORDER BY c.created_at ASC LIMIT ? OFFSET ?`,
-      [postId, limit, offset],
-    );
-    const [replies] = topLevel.length ? await db.query<RowDataPacket[]>(
-      `SELECT c.id AS _id, c.body, c.parent_comment_id AS parentCommentId, c.created_at AS createdAt, u.id AS user_id, u.name, u.avatar
-       FROM post_comments c INNER JOIN users u ON u.id = c.user_id
-       WHERE c.post_id = ? AND c.parent_comment_id IS NOT NULL AND u.deleted_at IS NULL ORDER BY c.created_at ASC`,
+       WHERE c.post_id = ? AND u.deleted_at IS NULL ORDER BY c.created_at ASC, c.id ASC`,
       [postId],
-    ) : [[] as RowDataPacket[]];
-    const [countRows] = await db.query<RowDataPacket[]>("SELECT COUNT(*) AS total FROM post_comments WHERE post_id = ? AND parent_comment_id IS NULL", [postId]);
-    const format = (row: RowDataPacket) => ({ _id: row._id, body: row.body, parentCommentId: row.parentCommentId, createdAt: row.createdAt, author: { _id: row.user_id, name: row.name, avatar: row.avatar } });
-    return res.json({ comments: [...topLevel, ...replies].map(format), hasMore: offset + topLevel.length < Number(countRows[0]?.total || 0) });
+    );
+    const authorFor = (row: RowDataPacket) => ({ _id: row.user_id, name: row.name, avatar: row.avatar });
+    type CommentNode = {
+      _id: number;
+      postId: number;
+      parentId: number | null;
+      parentCommentId: number | null;
+      text: string;
+      body: string;
+      user: { _id: number; name: string; avatar: string | null };
+      author: { _id: number; name: string; avatar: string | null };
+      createdAt: Date | string;
+      replies: CommentNode[];
+    };
+    const comments: CommentNode[] = rows.map((row) => {
+      const author = authorFor(row);
+      return {
+        _id: row._id,
+        postId: row.postId,
+        parentId: row.parentCommentId,
+        parentCommentId: row.parentCommentId,
+        text: row.body,
+        body: row.body,
+        user: author,
+        author,
+        createdAt: row.createdAt,
+        replies: [],
+      };
+    });
+    const byId = new Map(comments.map((comment) => [String(comment._id), comment]));
+    const roots: typeof comments = [];
+    comments.forEach((comment) => {
+      const parentId = comment.parentId;
+      const parent = parentId === null || parentId === undefined ? undefined : byId.get(String(parentId));
+      if (parent) parent.replies.push(comment);
+      else roots.push(comment);
+    });
+    const page = roots.slice(offset, offset + limit);
+    return res.json({ comments: page, hasMore: offset + page.length < roots.length });
   } catch (error) { return next(error); }
 }
 

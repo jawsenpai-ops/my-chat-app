@@ -75,6 +75,11 @@ export interface Post {
 
 export interface PostComment {
   _id: number | string;
+  postId?: number | string;
+  parentId?: number | string | null;
+  text?: string;
+  user?: Pick<User, "_id" | "name" | "avatar">;
+  replies?: PostComment[];
   body: string;
   parentCommentId?: number | string | null;
   createdAt: string;

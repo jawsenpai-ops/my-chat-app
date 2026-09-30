@@ -20,6 +20,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const listRef = useRef<FlatList<Message>>(null);
+  const sendingBodiesRef = useRef(new Set<string>());
   const { user } = useAuth();
   const [isFriend, setIsFriend] = useState(false);
   const [partnerOnline, setPartnerOnline] = useState(false);
@@ -32,26 +33,28 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   const reconcileMessage = (message: Message) => {
+    const sentMessage = { ...message, status: "sent" as const };
     setMessages((current) => {
-      const merged = current.map((item) => {
-        const sameClientId = Boolean(message.clientMessageId && item.clientMessageId === message.clientMessageId);
-        const sameServerId = String(item._id || (item as any).id) === String(message._id || (message as any).id);
-        const sameContent = item.text === message.text
-          && String(item.sender?._id || (item.sender as any)?.id || "") === String(message.sender?._id || (message.sender as any)?.id || "")
-          && Math.abs(new Date(item.createdAt).getTime() - new Date(message.createdAt).getTime()) < 5000;
-        if (sameClientId || sameServerId || sameContent) {
-          return {
-            ...item,
-            ...message,
-            _id: message._id ?? item._id,
-            clientMessageId: message.clientMessageId ?? item.clientMessageId,
-            status: "sent" as const,
-          };
-        }
-        return item;
+      const pendingIndex = !message.clientMessageId && current.findIndex((item) => {
+        if (item.status !== "pending" || item.text !== message.text) return false;
+        const itemSender = typeof item.sender === "object" ? item.sender?._id : item.sender;
+        const messageSender = typeof message.sender === "object" ? message.sender?._id : message.sender;
+        return String(itemSender ?? "") === String(messageSender ?? "")
+          && Math.abs(new Date(item.createdAt).getTime() - new Date(message.createdAt).getTime()) < 15_000;
       });
 
-      return dedupeMessages([...merged, { ...message, status: "sent" as const }]);
+      if (pendingIndex !== false && pendingIndex >= 0) {
+        return mergeMessages([], current.map((item, index) => index === pendingIndex
+          ? {
+            ...item,
+            ...sentMessage,
+            _id: message._id ?? item._id,
+            clientMessageId: message.clientMessageId ?? item.clientMessageId,
+          }
+          : item));
+      }
+
+      return mergeMessages(current, [sentMessage]);
     });
   };
 
@@ -97,7 +100,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const handleNewMessage = (msg: Message) => {
       if (String(msg.chat) === String(chatId)) {
-        setMessages((current) => mergeMessages(current, [{ ...msg, status: "sent" }]));
+        reconcileMessage(msg);
       }
     };
     const handleMessageDeleted = ({ messageId }: { messageId: string | number }) => {
@@ -126,6 +129,8 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const sendMessage = (body = text.trim(), clientMessageId = `${Date.now()}-${Math.random().toString(36).slice(2)}`, replyToMessage = replyTo, clearComposer = true) => {
     if (!body) return;
     const socket = getSocket();
+    if (!socket.connected || sendingBodiesRef.current.has(body)) return;
+    sendingBodiesRef.current.add(body);
     const payload = {
       chatId: String(chatId),
       text: body,
@@ -147,8 +152,6 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
       } : null,
     };
 
-    if (!socket.connected) return;
-
     setMessages((current) => {
       const existingIndex = current.findIndex((item) => item.clientMessageId === clientMessageId || String(item._id ?? (item as any).id) === String(clientMessageId));
       if (existingIndex < 0) {
@@ -158,13 +161,15 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
       return dedupeMessages(current.map((item, index) => index === existingIndex ? { ...item, status: "pending", text: body, createdAt: pendingMessage.createdAt } : item));
     });
     const timeout = setTimeout(() => {
-      setMessages((current) => current.map((item) => item.clientMessageId === clientMessageId && item.status === "pending" ? { ...item, status: "failed" } : item));
+      sendingBodiesRef.current.delete(body);
+      setMessages((current) => current.filter((item) => !(item.clientMessageId === clientMessageId && item.status === "pending")));
     }, 10_000);
 
     socket.emit("send-message", payload, (ack: { ok?: boolean; message?: Message; error?: string } | undefined) => {
       clearTimeout(timeout);
+      sendingBodiesRef.current.delete(body);
       if (!ack || !ack.ok || !ack.message) {
-        setMessages((current) => current.map((item) => item.clientMessageId === clientMessageId && item.status === "pending" ? { ...item, status: "failed" } : item));
+        setMessages((current) => current.filter((item) => !(item.clientMessageId === clientMessageId && item.status === "pending")));
         return;
       }
       reconcileMessage(ack.message);
@@ -247,7 +252,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
                 <Text style={isMe ? styles.myText : styles.otherText}>{item.displayText ?? item.text}</Text>
                 {item.pinned && <Text style={isMe ? styles.pinMyText : styles.pinText}>Pinned</Text>}
                 {isMe && item.status === "pending" && <Text style={styles.messageStatus}>◷ Sending</Text>}
-                {isMe && item.status === "sent" && <Text style={styles.messageStatus}>✓</Text>}
+                {isMe && item.status === "sent" && <Text style={styles.messageStatus}>✓✓</Text>}
                 {isMe && item.status === "failed" && <TouchableOpacity onPress={() => sendMessage(item.text, item.clientMessageId, item.replyTo ? ({ _id: item.replyTo._id, text: item.replyTo.text, sender: { _id: "", name: item.replyTo.senderName, avatar: "" } } as Message) : null, false)} accessibilityRole="button"><Text style={styles.retryText}>Failed · Retry</Text></TouchableOpacity>}
               </TouchableOpacity>
             );

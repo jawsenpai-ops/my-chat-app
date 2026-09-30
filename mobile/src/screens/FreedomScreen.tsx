@@ -3,9 +3,11 @@ import { Alert, Dimensions, FlatList, Image, Modal, RefreshControl, Share, Statu
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { apiCall } from "../api/client";
+import { normalizeCommentThreads, removeCommentBranch } from "../api/commentThreads";
 import { getSocket } from "../api/socket";
 import { useAuth } from "../context/AuthContext";
 import { AppColors } from "../theme/colors";
+import { CommentThreadList } from "../components/CommentThreadList";
 import { BottomTabBar } from "../components/BottomTabBar";
 import { PixelHourglassLoader } from "../components/PixelHourglassLoader";
 import { CreatePostComposer, SelectedImage } from "../components/CreatePostComposer";
@@ -13,25 +15,6 @@ import { readCachedPosts, saveCachedPosts } from "../api/offlinePostCache";
 import { FriendRelationship, Post, PostComment, PostCommentsResponse, RootStackParamList, User } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Freedom">;
-
-const normalizeComments = (response: PostCommentsResponse | PostComment[], offset = 0, limit = 4): PostCommentsResponse => {
-  if (!Array.isArray(response)) return { comments: Array.isArray(response?.comments) ? response.comments : [], hasMore: Boolean(response?.hasMore) };
-  const roots = response.filter((comment) => !comment.parentCommentId);
-  const pageRoots = roots.slice(offset, offset + limit);
-  const rootIds = new Set(pageRoots.map((comment) => String(comment._id)));
-  const visibleIds = new Set(rootIds);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    response.forEach((comment) => {
-      if (comment.parentCommentId !== null && comment.parentCommentId !== undefined && visibleIds.has(String(comment.parentCommentId)) && !visibleIds.has(String(comment._id))) {
-        visibleIds.add(String(comment._id));
-        changed = true;
-      }
-    });
-  }
-  return { comments: response.filter((comment) => visibleIds.has(String(comment._id))), hasMore: offset + pageRoots.length < roots.length };
-};
 
 export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   const { user } = useAuth();
@@ -181,7 +164,7 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   const showComments = async (post: Post) => {
     if (commentsFor === String(post._id)) return setCommentsFor(null);
     try {
-      const response = normalizeComments(await apiCall<PostCommentsResponse | PostComment[]>(`/posts/${post._id}/comments?limit=1000&offset=0`), 0, 1000);
+      const response = normalizeCommentThreads(await apiCall<PostCommentsResponse | PostComment[]>(`/posts/${post._id}/comments?limit=1000&offset=0`), 0, 1000);
       setComments(response.comments); setCommentsHasMore(response.hasMore); setCommentsOffset(response.comments.filter((comment) => !comment.parentCommentId).length); setExpandedReplyThreads(new Set()); setCommentsFor(String(post._id));
     }
     catch (error: any) { Alert.alert("Could not load comments", error.message); }
@@ -191,7 +174,7 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
     if (!commentsHasMore || commentsLoading) return;
     setCommentsLoading(true);
     try {
-      const response = normalizeComments(await apiCall<PostCommentsResponse | PostComment[]>(`/posts/${post._id}/comments?limit=4&offset=${commentsOffset}`), commentsOffset);
+      const response = normalizeCommentThreads(await apiCall<PostCommentsResponse | PostComment[]>(`/posts/${post._id}/comments?limit=4&offset=${commentsOffset}`), commentsOffset);
       setComments((current) => [...current, ...response.comments.filter((comment) => !current.some((existing) => existing._id === comment._id))]);
       setCommentsHasMore(response.hasMore);
       setCommentsOffset((current) => current + response.comments.filter((comment) => !comment.parentCommentId).length);
@@ -201,7 +184,7 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
 
   const openFullComments = async (post: Post) => {
     try {
-      const response = normalizeComments(await apiCall<PostCommentsResponse | PostComment[]>(`/posts/${post._id}/comments?limit=1000&offset=0`), 0, 1000);
+      const response = normalizeCommentThreads(await apiCall<PostCommentsResponse | PostComment[]>(`/posts/${post._id}/comments?limit=1000&offset=0`), 0, 1000);
       setComments(response.comments);
       setCommentsHasMore(response.hasMore);
       setExpandedReplyThreads(new Set());
@@ -214,8 +197,9 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
     try {
       await apiCall(`/posts/${post._id}/comments`, { method: "POST", body: JSON.stringify({ body: commentText, parentCommentId: replyTo?._id || null }) });
       setCommentText(""); setReplyTo(null);
-      const response = normalizeComments(await apiCall<PostCommentsResponse | PostComment[]>(`/posts/${post._id}/comments?limit=1000&offset=0`), 0, 1000);
+      const response = normalizeCommentThreads(await apiCall<PostCommentsResponse | PostComment[]>(`/posts/${post._id}/comments?limit=1000&offset=0`), 0, 1000);
       setComments(response.comments); setCommentsHasMore(response.hasMore);
+      if (replyTo) setExpandedReplyThreads((current) => new Set(current).add(String(replyTo._id)));
       setPosts((current) => current.map((item) => item._id === post._id ? { ...item, commentCount: item.commentCount + 1 } : item));
     } catch (error: any) { Alert.alert("Could not add comment", error.message); }
   };
@@ -226,19 +210,9 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
       { text: "Delete", style: "destructive", onPress: async () => {
         try {
           await apiCall(`/posts/${post._id}/comments/${comment._id}`, { method: "DELETE" });
-          const deletedIds = new Set<string>([String(comment._id)]);
-          let foundDescendant = true;
-          while (foundDescendant) {
-            foundDescendant = false;
-            comments.forEach((item) => {
-              if (item.parentCommentId !== null && item.parentCommentId !== undefined && deletedIds.has(String(item.parentCommentId)) && !deletedIds.has(String(item._id))) {
-                deletedIds.add(String(item._id));
-                foundDescendant = true;
-              }
-            });
-          }
-          setComments((current) => current.filter((item) => !deletedIds.has(String(item._id))));
-          setPosts((current) => current.map((item) => item._id === post._id ? { ...item, commentCount: Math.max(0, item.commentCount - deletedIds.size) } : item));
+          const updated = removeCommentBranch(comments, String(comment._id));
+          setComments(updated.comments);
+          setPosts((current) => current.map((item) => item._id === post._id ? { ...item, commentCount: Math.max(0, item.commentCount - updated.removedCount) } : item));
         } catch (error: any) { Alert.alert("Could not delete comment", error.message); }
       } },
     ]);
@@ -273,24 +247,15 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
     const online = onlineIds.has(String(item.author._id)) || String(item.author._id) === String(user?._id);
     const authorId = String(item.author._id);
     const friendStatus = friendStatuses[authorId];
-    const childComments = (parentId: number | string) => comments.filter((comment) => String(comment.parentCommentId) === String(parentId));
-    const renderComment = (comment: PostComment, depth = 0): React.ReactElement => {
-      const canDelete = String(comment.author._id) === String(user?._id) || String(item.author._id) === String(user?._id);
-      const children = childComments(comment._id);
-      const showAllReplies = expandedReplyThreads.has(String(comment._id));
-      const visibleChildren = showAllReplies ? children : children.slice(0, 1);
-      return <View key={String(comment._id)} style={[styles.commentThread, depth > 0 && styles.replyThread]}>
-        <View style={styles.comment}>
-          <Image source={{ uri: comment.author.avatar }} style={styles.commentAvatar} />
-          <View style={styles.commentText}>
-            <Text><Text style={styles.commentName}>{comment.author.name}: </Text>{comment.parentCommentId ? <Text style={styles.replyMention}>@{comments.find((parent) => String(parent._id) === String(comment.parentCommentId))?.author.name || "user"} </Text> : null}{comment.body}</Text>
-            <View style={styles.commentActions}><TouchableOpacity onPress={() => setReplyTo(comment)}><Text style={styles.replyLink}>Reply</Text></TouchableOpacity>{canDelete && <TouchableOpacity onPress={() => deleteComment(item, comment)} onLongPress={() => deleteComment(item, comment)}><Text style={styles.deleteCommentLink}>...</Text></TouchableOpacity>}</View>
-          </View>
-        </View>
-        {visibleChildren.map((child) => renderComment(child, depth + 1))}
-        {children.length > visibleChildren.length && <TouchableOpacity onPress={() => setExpandedReplyThreads((current) => { const next = new Set(current); next.add(String(comment._id)); return next; })}><Text style={styles.moreReplies}>and more</Text></TouchableOpacity>}
-      </View>;
+    const startReply = (comment: PostComment) => {
+      setReplyTo(comment);
     };
+    const toggleReplies = (commentId: string) => setExpandedReplyThreads((current) => {
+      const next = new Set(current);
+      if (next.has(commentId)) next.delete(commentId);
+      else next.add(commentId);
+      return next;
+    });
     const topLevelComments = comments.filter((comment) => !comment.parentCommentId);
     const previewComments = topLevelComments.slice(0, 10);
     return <View style={[styles.postCard, highlightedPostId === String(item._id) && styles.highlightedPost]}>
@@ -305,8 +270,8 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
         return <View style={{ position: "relative" }}><FlatList horizontal pagingEnabled showsHorizontalScrollIndicator={false} data={photos} keyExtractor={(_, index) => `${item._id}-${index}`} onMomentumScrollEnd={(event) => { const pageWidth = Dimensions.get("window").width - 56; const index = Math.round(event.nativeEvent.contentOffset.x / pageWidth); setCarouselIndexes((current) => ({ ...current, [postKey]: index })); }} renderItem={({ item: uri, index }) => <TouchableOpacity onPress={() => openFullScreen(photos, index)} activeOpacity={0.9}><Image source={{ uri }} style={styles.feedPhoto} resizeMode="cover" /></TouchableOpacity>} />{photos.length > 1 && <View style={styles.carouselIndicator}><Text style={styles.carouselIndicatorText}>{(carouselIndexes[postKey] || 0) + 1}/{photos.length}</Text></View>}</View>;
       })() : null}
       <View style={styles.actionRow}><TouchableOpacity onPress={() => toggleLike(item)}><Text style={[styles.actionText, item.likedByMe && styles.liked]}>{item.likedByMe ? "Unlike" : "Like"} · {item.likeCount}</Text></TouchableOpacity><TouchableOpacity onPress={() => showComments(item)}><Text style={styles.actionText}>Comment · {item.commentCount}</Text></TouchableOpacity></View>
-      {commentsFor === String(item._id) && <View style={styles.comments}>{previewComments.map((comment) => renderComment(comment))}{(topLevelComments.length > 10 || commentsHasMore) && <TouchableOpacity onPress={() => openFullComments(item)} disabled={commentsLoading}><Text style={styles.seeMore}>{commentsLoading ? "Loading..." : "See More Comments"}</Text></TouchableOpacity>}<View style={styles.commentComposer}>{replyTo && <Text style={styles.replyingTo}>Replying to @{replyTo.author.name}</Text>}<TextInput value={commentText} onChangeText={setCommentText} placeholder={replyTo ? `Reply to @${replyTo.author.name}` : "Write a comment..."} placeholderTextColor={AppColors.placeholder} style={styles.commentInput} /><TouchableOpacity onPress={() => addComment(item)}><Text style={styles.postLink}>Post</Text></TouchableOpacity></View></View>}
-      <Modal visible={fullCommentsPostId === String(item._id)} animationType="slide" transparent onRequestClose={() => setFullCommentsPostId(null)}><View style={styles.modalBackdrop}><View style={styles.fullCommentsPanel}><View style={styles.fullCommentsHeader}><Text style={styles.modalTitle}>Comments</Text><TouchableOpacity onPress={() => setFullCommentsPostId(null)}><Text style={styles.closeComments}>X</Text></TouchableOpacity></View><FlatList data={topLevelComments} keyExtractor={(comment) => `full-comment-${String(comment._id)}`} renderItem={({ item: comment }) => renderComment(comment)} ListEmptyComponent={<Text style={styles.empty}>No comments yet.</Text>} /><View style={styles.commentComposer}>{replyTo && <Text style={styles.replyingTo}>Replying to @{replyTo.author.name}</Text>}<TextInput value={commentText} onChangeText={setCommentText} placeholder={replyTo ? `Reply to @${replyTo.author.name}` : "Write a comment..."} placeholderTextColor={AppColors.placeholder} style={styles.commentInput} /><TouchableOpacity onPress={() => addComment(item)}><Text style={styles.postLink}>Post</Text></TouchableOpacity></View></View></View></Modal>
+      {commentsFor === String(item._id) && <View style={styles.comments}><CommentThreadList comments={previewComments} userId={user?._id} postAuthorId={item.author._id} expandedReplyThreads={expandedReplyThreads} onReply={startReply} onDelete={(comment) => deleteComment(item, comment)} onToggleReplies={toggleReplies} />{(topLevelComments.length > 10 || commentsHasMore) && <TouchableOpacity onPress={() => openFullComments(item)} disabled={commentsLoading}><Text style={styles.seeMore}>{commentsLoading ? "Loading..." : "See More Comments"}</Text></TouchableOpacity>}<View style={styles.commentComposer}>{replyTo && <Text style={styles.replyingTo}>Replying to @{replyTo.author.name}</Text>}<TextInput value={commentText} onChangeText={setCommentText} placeholder={replyTo ? `Reply to @${replyTo.author.name}` : "Write a comment..."} placeholderTextColor={AppColors.placeholder} style={styles.commentInput} /><TouchableOpacity onPress={() => addComment(item)}><Text style={styles.postLink}>Post</Text></TouchableOpacity></View></View>}
+      <Modal visible={fullCommentsPostId === String(item._id)} animationType="slide" transparent onRequestClose={() => setFullCommentsPostId(null)}><View style={styles.modalBackdrop}><View style={styles.fullCommentsPanel}><View style={styles.fullCommentsHeader}><Text style={styles.modalTitle}>Comments</Text><TouchableOpacity onPress={() => setFullCommentsPostId(null)}><Text style={styles.closeComments}>X</Text></TouchableOpacity></View><FlatList data={topLevelComments} keyExtractor={(comment) => `full-comment-${String(comment._id)}`} renderItem={({ item: comment }) => <CommentThreadList comments={[comment]} userId={user?._id} postAuthorId={item.author._id} expandedReplyThreads={expandedReplyThreads} onReply={startReply} onDelete={(target) => deleteComment(item, target)} onToggleReplies={toggleReplies} />} ListEmptyComponent={<Text style={styles.empty}>No comments yet.</Text>} /><View style={styles.commentComposer}>{replyTo && <Text style={styles.replyingTo}>Replying to @{replyTo.author.name}</Text>}<TextInput value={commentText} onChangeText={setCommentText} placeholder={replyTo ? `Reply to @${replyTo.author.name}` : "Write a comment..."} placeholderTextColor={AppColors.placeholder} style={styles.commentInput} /><TouchableOpacity onPress={() => addComment(item)}><Text style={styles.postLink}>Post</Text></TouchableOpacity></View></View></View></Modal>
     </View>;
   };
 
