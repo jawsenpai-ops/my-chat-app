@@ -27,14 +27,31 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const userId = String(user?._id || (user as any)?.id || "");
   const currentCacheKey = userId ? `${userId}:${chatId}` : null;
 
+  const dedupeMessages = (items: Message[]): Message[] => {
+    return mergeMessages([], items);
+  };
+
   const reconcileMessage = (message: Message) => {
     setMessages((current) => {
-      const matchingIndex = current.findIndex((item) =>
-        (message.clientMessageId && item.clientMessageId === message.clientMessageId) ||
-        String(item._id || (item as any).id) === String(message._id || (message as any).id),
-      );
-      if (matchingIndex < 0) return [...current, { ...message, status: "sent" }];
-      return current.map((item, index) => index === matchingIndex ? { ...message, status: "sent" } : item);
+      const merged = current.map((item) => {
+        const sameClientId = Boolean(message.clientMessageId && item.clientMessageId === message.clientMessageId);
+        const sameServerId = String(item._id || (item as any).id) === String(message._id || (message as any).id);
+        const sameContent = item.text === message.text
+          && String(item.sender?._id || (item.sender as any)?.id || "") === String(message.sender?._id || (message.sender as any)?.id || "")
+          && Math.abs(new Date(item.createdAt).getTime() - new Date(message.createdAt).getTime()) < 5000;
+        if (sameClientId || sameServerId || sameContent) {
+          return {
+            ...item,
+            ...message,
+            _id: message._id ?? item._id,
+            clientMessageId: message.clientMessageId ?? item.clientMessageId,
+            status: "sent" as const,
+          };
+        }
+        return item;
+      });
+
+      return dedupeMessages([...merged, { ...message, status: "sent" as const }]);
     });
   };
 
@@ -59,9 +76,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
 
     const fetchMessages = async () => {
       const cachedMessages = userId
-        ? (await readCachedMessages(userId, String(chatId))).map((message) =>
-          message.status === "pending" ? { ...message, status: "failed" as const } : message,
-        )
+        ? (await readCachedMessages(userId, String(chatId))).filter((message) => message.status !== "pending" && message.status !== "failed")
         : [];
       if (!active) return;
       setMessages((current) => mergeMessages(current, cachedMessages));
@@ -70,7 +85,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
       try {
         const data = await apiCall<Message[]>(`/messages/chat/${chatId}`);
         if (!active) return;
-        setMessages((current) => mergeMessages(current, data));
+        setMessages((current) => mergeMessages(current, data.map((message) => ({ ...message, status: "sent" }))));
         getSocket().emit("chat-read", String(chatId));
       } catch (err) {
         if (cachedMessages.length === 0) console.warn("Message history is unavailable offline.");
@@ -132,16 +147,16 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
       } : null,
     };
 
-    setMessages((current) => {
-      const existing = current.findIndex((item) => item.clientMessageId === clientMessageId);
-      if (existing < 0) return [...current, pendingMessage];
-      return current.map((item, index) => index === existing ? { ...item, status: "pending" } : item);
-    });
-    if (!socket.connected) {
-      setMessages((current) => current.map((item) => item.clientMessageId === clientMessageId ? { ...item, status: "failed" } : item));
-      return;
-    }
+    if (!socket.connected) return;
 
+    setMessages((current) => {
+      const existingIndex = current.findIndex((item) => item.clientMessageId === clientMessageId || String(item._id ?? (item as any).id) === String(clientMessageId));
+      if (existingIndex < 0) {
+        return dedupeMessages([...current, pendingMessage]);
+      }
+
+      return dedupeMessages(current.map((item, index) => index === existingIndex ? { ...item, status: "pending", text: body, createdAt: pendingMessage.createdAt } : item));
+    });
     const timeout = setTimeout(() => {
       setMessages((current) => current.map((item) => item.clientMessageId === clientMessageId && item.status === "pending" ? { ...item, status: "failed" } : item));
     }, 10_000);
@@ -217,9 +232,9 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
           contentContainerStyle={styles.listContent}
           data={messages}
           keyExtractor={(item, index) => {
-            if (item.clientMessageId) return `msg-${item.clientMessageId}`;
+            if (item.clientMessageId) return `msg-client-${item.clientMessageId}`;
             const id = item._id || (item as any).id;
-            return id ? `msg-${id}` : `msg-fallback-${index}-${item.text.slice(0, 5)}`;
+            return id ? `msg-server-${id}` : `msg-fallback-${index}-${item.text.slice(0, 5)}`;
           }}
           renderItem={({ item }) => {
             const senderId = typeof item.sender === "object" ? (item.sender?._id || (item.sender as any)?.id) : item.sender;
@@ -227,7 +242,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
             const isMe = String(senderId) === String(currentUserId);
 
             return (
-              <TouchableOpacity onLongPress={() => item.status !== "pending" && item.status !== "failed" && setSelectedMessage(item)} delayLongPress={500} style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble, item.pinned && styles.pinnedBubble]}>
+              <TouchableOpacity key={item.clientMessageId ? `msg-client-${item.clientMessageId}` : `msg-server-${String(item._id ?? (item as any).id ?? `${item.text}-${item.createdAt}`)}`} onLongPress={() => item.status !== "pending" && item.status !== "failed" && setSelectedMessage(item)} delayLongPress={500} style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble, item.pinned && styles.pinnedBubble]}>
                 {item.replyTo && <View style={styles.replyQuote}><Text style={styles.replyQuoteName}>{item.replyTo.senderName}</Text><Text style={styles.replyQuoteText} numberOfLines={1}>{item.replyTo.text}</Text></View>}
                 <Text style={isMe ? styles.myText : styles.otherText}>{item.displayText ?? item.text}</Text>
                 {item.pinned && <Text style={isMe ? styles.pinMyText : styles.pinText}>Pinned</Text>}

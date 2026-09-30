@@ -109,6 +109,7 @@ export const PostScreen: React.FC<Props> = ({ navigation, route }) => {
     setPost(optimistic);
     try {
       await apiCall(`/posts/${post._id}/like`, { method: "POST" });
+      await saveCachedPost(String(post._id), optimistic);
     } catch (error: any) {
       setPost(post);
       Alert.alert("Could not update like", error.message);
@@ -124,7 +125,13 @@ export const PostScreen: React.FC<Props> = ({ navigation, route }) => {
       setReplyTo(null);
       const commentData = normalizeComments(await apiCall<PostCommentsResponse | PostComment[]>(`/posts/${post._id}/comments?limit=1000&offset=0`), 0, 1000);
       setComments(commentData.comments);
-      setPost((current) => current ? { ...current, commentCount: current.commentCount + 1 } : current);
+      await saveCachedComments(String(post._id), commentData.comments);
+      setPost((current) => {
+        if (!current) return current;
+        const updatedPost = { ...current, commentCount: current.commentCount + 1 };
+        void saveCachedPost(String(post._id), updatedPost);
+        return updatedPost;
+      });
     } catch (error: any) {
       Alert.alert("Could not add comment", error.message);
     } finally {

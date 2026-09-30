@@ -31,7 +31,8 @@ export const readCachedMessages = (userId: string, chatId: string) => readArray<
 
 export async function saveCachedMessages(userId: string, chatId: string, messages: Message[]) {
   try {
-    await AsyncStorage.setItem(messagesKey(userId, chatId), JSON.stringify(messages.slice(-MAX_CACHED_MESSAGES)));
+    const confirmedMessages = messages.filter((message) => message.status !== "pending" && message.status !== "failed");
+    await AsyncStorage.setItem(messagesKey(userId, chatId), JSON.stringify(confirmedMessages.slice(-MAX_CACHED_MESSAGES)));
   } catch (error) {
     console.warn("Unable to save offline messages", error);
   }
@@ -39,19 +40,32 @@ export async function saveCachedMessages(userId: string, chatId: string, message
 
 export function mergeMessages(existing: Message[], incoming: Message[]) {
   const messagesById = new Map<string, Message>();
-  for (const message of existing) {
-    const key = message.clientMessageId ? `client:${message.clientMessageId}` : `message:${message._id}`;
-    messagesById.set(key, message);
-  }
-  for (const message of incoming) {
-    const key = message.clientMessageId ? `client:${message.clientMessageId}` : `message:${message._id}`;
+  const identityKeys = new Map<string, string>();
+
+  const addMessage = (message: Message) => {
+    const messageId = message._id ?? (message as any).id;
+    const clientId = message.clientMessageId;
+    const clientKey = clientId !== undefined && clientId !== null ? `client:${clientId}` : null;
+    const serverKey = messageId !== undefined && messageId !== null ? `server:${messageId}` : null;
+    const key = (clientKey && identityKeys.get(clientKey))
+      || (serverKey && identityKeys.get(serverKey))
+      || clientKey
+      || serverKey
+      || `fallback:${message.text}:${message.createdAt}:${message.sender?._id ?? ""}`;
     const previous = messagesById.get(key);
-    messagesById.set(key, {
+    const merged = {
       ...previous,
       ...message,
       status: message.status ?? (previous?.status === "pending" ? "sent" : previous?.status),
-    });
-  }
+    };
+    messagesById.set(key, merged);
+    if (clientKey) identityKeys.set(clientKey, key);
+    if (serverKey) identityKeys.set(serverKey, key);
+  };
+
+  for (const message of existing) addMessage(message);
+  for (const message of incoming) addMessage(message);
+
   return [...messagesById.values()].sort((first, second) =>
     new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime(),
   ).slice(-MAX_CACHED_MESSAGES);
