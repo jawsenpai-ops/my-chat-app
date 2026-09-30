@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Keyboard, Platform, Image, Alert, Modal } from "react-native";
+import type { ViewToken } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { FriendRelationship, RootStackParamList, Message } from "../types";
@@ -12,6 +13,7 @@ import { mergeMessages, readCachedMessages, saveCachedMessages } from "../api/of
 type Props = NativeStackScreenProps<RootStackParamList, "ChatRoom">;
 type ChatReadState = {
   lastReadMessageId: number | string | null;
+  lastViewedMessageId: number | string | null;
   firstUnreadMessageId: number | string | null;
 };
 type ChatReadAck = ChatReadState & {
@@ -27,6 +29,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const [pinnedListVisible, setPinnedListVisible] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [lastViewedMessageId, setLastViewedMessageId] = useState<string | null>(null);
   const [firstUnreadMessageId, setFirstUnreadMessageId] = useState<string | null>(null);
   const [readStateLoaded, setReadStateLoaded] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -35,6 +38,9 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const initialPositionedRef = useRef(false);
   const lastReadMessageIdRef = useRef<string | null>(null);
   const lastReadSentRef = useRef<string | null>(null);
+  const viewedMessageIdRef = useRef<string | null>(null);
+  const lastViewedMessageIdRef = useRef<string | null>(null);
+  const lastViewedSentRef = useRef<string | null>(null);
   const keyboardVisibleRef = useRef(false);
   const followStateBeforeKeyboardRef = useRef<boolean | null>(null);
   const sendingBodiesRef = useRef(new Set<string>());
@@ -44,6 +50,31 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const [cacheReadyForKey, setCacheReadyForKey] = useState<string | null>(null);
   const userId = String(user?._id || (user as any)?.id || "");
   const currentCacheKey = userId ? `${userId}:${chatId}` : null;
+
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 1 }).current;
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const firstVisible = viewableItems
+      .filter((token) => token.isViewable && token.index !== null)
+      .sort((first, second) => (first.index ?? 0) - (second.index ?? 0))
+      .find((token) => /^\d+$/.test(String((token.item as Message | undefined)?._id)));
+    if (firstVisible) viewedMessageIdRef.current = String((firstVisible.item as Message)._id);
+  }).current;
+
+  const saveViewedPosition = () => {
+    const messageId = viewedMessageIdRef.current;
+    if (!messageId || messageId === lastViewedSentRef.current) return;
+
+    lastViewedSentRef.current = messageId;
+    getSocket().emit("chat-viewed", { chatId: String(chatId), messageId }, (result: { ok: boolean; messageId?: number | string }) => {
+      if (lastViewedSentRef.current !== messageId) return;
+      if (!result?.ok) {
+        lastViewedSentRef.current = lastViewedMessageIdRef.current;
+        return;
+      }
+      lastViewedMessageIdRef.current = String(result.messageId ?? messageId);
+      setLastViewedMessageId(lastViewedMessageIdRef.current);
+    });
+  };
 
   const markCurrentMessagesRead = () => {
     if (!readStateLoaded || !messages.length) return;
@@ -105,6 +136,18 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
     if (!readStateLoaded) return;
 
     if (!initialPositionedRef.current) {
+      const resumeMessageId = lastViewedMessageId || firstUnreadMessageId;
+      if (resumeMessageId) {
+        const resumeIndex = messages.findIndex((message) => String(message._id) === resumeMessageId);
+        if (resumeIndex >= 0) {
+          initialPositionedRef.current = true;
+          shouldFollowLatestRef.current = resumeIndex === messages.length - 1;
+          setShowScrollToBottom(resumeIndex < messages.length - 1);
+          requestAnimationFrame(() => listRef.current?.scrollToIndex({ index: resumeIndex, animated: false, viewPosition: 0 }));
+          return;
+        }
+      }
+
       if (firstUnreadMessageId) {
         const unreadIndex = messages.findIndex((message) => String(message._id) === firstUnreadMessageId);
         if (unreadIndex < 0) return;
@@ -125,7 +168,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
     if (shouldFollowLatestRef.current) {
       requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
     }
-  }, [messages, firstUnreadMessageId, readStateLoaded]);
+  }, [messages, lastViewedMessageId, firstUnreadMessageId, readStateLoaded]);
 
   const dedupeMessages = (items: Message[]): Message[] => {
     return mergeMessages([], items);
@@ -176,6 +219,10 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
     initialPositionedRef.current = false;
     lastReadMessageIdRef.current = null;
     lastReadSentRef.current = null;
+    viewedMessageIdRef.current = null;
+    lastViewedMessageIdRef.current = null;
+    lastViewedSentRef.current = null;
+    setLastViewedMessageId(null);
     setFirstUnreadMessageId(null);
     setReadStateLoaded(false);
     setShowScrollToBottom(false);
@@ -213,6 +260,11 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
           const lastReadId = readState.lastReadMessageId == null ? null : String(readState.lastReadMessageId);
           lastReadMessageIdRef.current = lastReadId;
           lastReadSentRef.current = lastReadId;
+          const viewedId = readState.lastViewedMessageId == null ? null : String(readState.lastViewedMessageId);
+          viewedMessageIdRef.current = viewedId;
+          lastViewedMessageIdRef.current = viewedId;
+          lastViewedSentRef.current = viewedId;
+          setLastViewedMessageId(viewedId);
           setFirstUnreadMessageId(readState.firstUnreadMessageId == null ? null : String(readState.firstUnreadMessageId));
           setReadStateLoaded(true);
         } catch {
@@ -393,6 +445,10 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
             ref={listRef}
             contentContainerStyle={styles.listContent}
             data={messages}
+            onViewableItemsChanged={onViewableItemsChanged}
+            viewabilityConfig={viewabilityConfig}
+            onScrollEndDrag={saveViewedPosition}
+            onMomentumScrollEnd={saveViewedPosition}
             onScroll={({ nativeEvent }) => {
               if (followStateBeforeKeyboardRef.current !== null) return;
               const distanceFromBottom = nativeEvent.contentSize.height
