@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Image, Alert, Modal } from "react-native";
+import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Keyboard, Platform, Image, Alert, Modal } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { FriendRelationship, RootStackParamList, Message } from "../types";
@@ -10,6 +10,14 @@ import { AppColors } from "../theme/colors";
 import { mergeMessages, readCachedMessages, saveCachedMessages } from "../api/offlineChatCache";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ChatRoom">;
+type ChatReadState = {
+  lastReadMessageId: number | string | null;
+  firstUnreadMessageId: number | string | null;
+};
+type ChatReadAck = ChatReadState & {
+  ok: boolean;
+  unreadCount?: number;
+};
 
 export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const { chatId, participant } = route.params;
@@ -19,7 +27,16 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const [pinnedListVisible, setPinnedListVisible] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [firstUnreadMessageId, setFirstUnreadMessageId] = useState<string | null>(null);
+  const [readStateLoaded, setReadStateLoaded] = useState(false);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const listRef = useRef<FlatList<Message>>(null);
+  const shouldFollowLatestRef = useRef(true);
+  const initialPositionedRef = useRef(false);
+  const lastReadMessageIdRef = useRef<string | null>(null);
+  const lastReadSentRef = useRef<string | null>(null);
+  const keyboardVisibleRef = useRef(false);
+  const followStateBeforeKeyboardRef = useRef<boolean | null>(null);
   const sendingBodiesRef = useRef(new Set<string>());
   const { user } = useAuth();
   const [isFriend, setIsFriend] = useState(false);
@@ -28,12 +45,95 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const userId = String(user?._id || (user as any)?.id || "");
   const currentCacheKey = userId ? `${userId}:${chatId}` : null;
 
+  const markCurrentMessagesRead = () => {
+    if (!readStateLoaded || !messages.length) return;
+    const latestReadableMessage = [...messages].reverse().find((message) =>
+      message.status !== "pending"
+      && message.status !== "failed"
+      && /^\d+$/.test(String(message._id)),
+    );
+    if (!latestReadableMessage) return;
+
+    const messageId = String(latestReadableMessage._id);
+    const lastSentId = lastReadSentRef.current;
+    if (lastSentId && Number(lastSentId) >= Number(messageId)) return;
+    lastReadSentRef.current = messageId;
+
+    getSocket().emit("chat-read", { chatId: String(chatId), messageId }, (result: ChatReadAck) => {
+      if (!result?.ok) {
+        if (lastReadSentRef.current === messageId) lastReadSentRef.current = lastReadMessageIdRef.current;
+        return;
+      }
+
+      const acknowledgedId = String(result.lastReadMessageId ?? messageId);
+      const currentReadId = lastReadMessageIdRef.current;
+      if (!currentReadId || Number(acknowledgedId) >= Number(currentReadId)) {
+        lastReadMessageIdRef.current = acknowledgedId;
+        lastReadSentRef.current = acknowledgedId;
+        setFirstUnreadMessageId(result.firstUnreadMessageId == null ? null : String(result.firstUnreadMessageId));
+      }
+    });
+  };
+
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener("keyboardDidShow", () => {
+      keyboardVisibleRef.current = true;
+      if (followStateBeforeKeyboardRef.current !== null) {
+        shouldFollowLatestRef.current = followStateBeforeKeyboardRef.current;
+        followStateBeforeKeyboardRef.current = null;
+      }
+
+      if (shouldFollowLatestRef.current) {
+        setShowScrollToBottom(false);
+        requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+      } else {
+        setShowScrollToBottom(true);
+      }
+    });
+    const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
+      keyboardVisibleRef.current = false;
+      followStateBeforeKeyboardRef.current = null;
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!readStateLoaded) return;
+
+    if (!initialPositionedRef.current) {
+      if (firstUnreadMessageId) {
+        const unreadIndex = messages.findIndex((message) => String(message._id) === firstUnreadMessageId);
+        if (unreadIndex < 0) return;
+        initialPositionedRef.current = true;
+        shouldFollowLatestRef.current = unreadIndex === messages.length - 1;
+        setShowScrollToBottom(unreadIndex < messages.length - 1);
+        requestAnimationFrame(() => listRef.current?.scrollToIndex({ index: unreadIndex, animated: false }));
+        return;
+      }
+
+      initialPositionedRef.current = true;
+      shouldFollowLatestRef.current = true;
+      setShowScrollToBottom(false);
+      if (messages.length > 0) requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: false }));
+      return;
+    }
+
+    if (shouldFollowLatestRef.current) {
+      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    }
+  }, [messages, firstUnreadMessageId, readStateLoaded]);
+
   const dedupeMessages = (items: Message[]): Message[] => {
     return mergeMessages([], items);
   };
 
   const reconcileMessage = (message: Message) => {
     const sentMessage = { ...message, status: "sent" as const };
+    let didMerge = false;
     setMessages((current) => {
       const pendingIndex = !message.clientMessageId && current.findIndex((item) => {
         if (item.status !== "pending" || item.text !== message.text) return false;
@@ -43,8 +143,9 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
           && Math.abs(new Date(item.createdAt).getTime() - new Date(message.createdAt).getTime()) < 15_000;
       });
 
+      let next: Message[];
       if (pendingIndex !== false && pendingIndex >= 0) {
-        return mergeMessages([], current.map((item, index) => index === pendingIndex
+        next = mergeMessages([], current.map((item, index) => index === pendingIndex
           ? {
             ...item,
             ...sentMessage,
@@ -52,15 +153,32 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
             clientMessageId: message.clientMessageId ?? item.clientMessageId,
           }
           : item));
+      } else {
+        next = mergeMessages(current, [sentMessage]);
       }
 
-      return mergeMessages(current, [sentMessage]);
+      didMerge = next.some((item) => {
+        const itemClientId = item.clientMessageId ?? (item as any).id;
+        const otherClientId = message.clientMessageId ?? (message as any).id;
+        const itemServerId = String(item._id ?? (item as any).id ?? "");
+        const otherServerId = String(message._id ?? (message as any).id ?? "");
+        return String(itemClientId ?? "") === String(otherClientId ?? "") || itemServerId === otherServerId;
+      });
+      return next;
     });
+    return didMerge;
   };
 
   useEffect(() => {
     const socket = getSocket();
     let active = true;
+    shouldFollowLatestRef.current = true;
+    initialPositionedRef.current = false;
+    lastReadMessageIdRef.current = null;
+    lastReadSentRef.current = null;
+    setFirstUnreadMessageId(null);
+    setReadStateLoaded(false);
+    setShowScrollToBottom(false);
     setMessages([]);
     setCacheReadyForKey(null);
 
@@ -89,8 +207,19 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
         const data = await apiCall<Message[]>(`/messages/chat/${chatId}`);
         if (!active) return;
         setMessages((current) => mergeMessages(current, data.map((message) => ({ ...message, status: "sent" }))));
-        getSocket().emit("chat-read", String(chatId));
+        try {
+          const readState = await apiCall<ChatReadState>(`/messages/chat/${chatId}/read-state`);
+          if (!active) return;
+          const lastReadId = readState.lastReadMessageId == null ? null : String(readState.lastReadMessageId);
+          lastReadMessageIdRef.current = lastReadId;
+          lastReadSentRef.current = lastReadId;
+          setFirstUnreadMessageId(readState.firstUnreadMessageId == null ? null : String(readState.firstUnreadMessageId));
+          setReadStateLoaded(true);
+        } catch {
+          if (active) setReadStateLoaded(true);
+        }
       } catch (err) {
+        if (active) setReadStateLoaded(true);
         if (cachedMessages.length === 0) console.warn("Message history is unavailable offline.");
       }
     };
@@ -126,11 +255,18 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
     void saveCachedMessages(userId, String(chatId), messages);
   }, [messages, cacheReadyForKey, currentCacheKey, userId, chatId]);
 
-  const sendMessage = (body = text.trim(), clientMessageId = `${Date.now()}-${Math.random().toString(36).slice(2)}`, replyToMessage = replyTo, clearComposer = true) => {
+  const sendMessage = async (body = text.trim(), clientMessageId = `${Date.now()}-${Math.random().toString(36).slice(2)}`, replyToMessage = replyTo, clearComposer = true) => {
     if (!body) return;
+    shouldFollowLatestRef.current = true;
+    setShowScrollToBottom(false);
     const socket = getSocket();
-    if (!socket.connected || sendingBodiesRef.current.has(body)) return;
+    if (sendingBodiesRef.current.has(body)) return;
     sendingBodiesRef.current.add(body);
+    if (clearComposer) {
+      setText((current) => current.trim() === body ? "" : current);
+      setReplyTo((current) => current === replyToMessage ? null : current);
+    }
+
     const payload = {
       chatId: String(chatId),
       text: body,
@@ -163,22 +299,42 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
     const timeout = setTimeout(() => {
       sendingBodiesRef.current.delete(body);
       setMessages((current) => current.filter((item) => !(item.clientMessageId === clientMessageId && item.status === "pending")));
+      if (clearComposer) {
+        setText((current) => current.trim() ? current : body);
+        if (replyToMessage) setReplyTo(replyToMessage);
+      }
     }, 10_000);
 
-    socket.emit("send-message", payload, (ack: { ok?: boolean; message?: Message; error?: string } | undefined) => {
+    const finishSocketSend = (ack: { ok?: boolean; message?: Message; error?: string } | undefined) => {
       clearTimeout(timeout);
       sendingBodiesRef.current.delete(body);
       if (!ack || !ack.ok || !ack.message) {
         setMessages((current) => current.filter((item) => !(item.clientMessageId === clientMessageId && item.status === "pending")));
+        if (clearComposer) {
+          setText((current) => current.trim() ? current : body);
+          if (replyToMessage) setReplyTo(replyToMessage);
+        }
         return;
       }
       reconcileMessage(ack.message);
-    });
+    };
 
-    if (clearComposer) {
-      setText("");
-      setReplyTo(null);
+    if (!socket.connected) {
+      socket.connect();
+      try {
+        const fallback = await apiCall<Message>(`/messages/chat/${chatId}`, {
+          method: "POST",
+          body: JSON.stringify({ text: body, replyToId: payload.replyToId, clientMessageId }),
+        });
+        finishSocketSend({ ok: true, message: fallback });
+      } catch (error: any) {
+        Alert.alert("Could not send message", error.message || "Please try again.");
+        finishSocketSend(undefined);
+      }
+      return;
     }
+
+    socket.emit("send-message", payload, finishSocketSend);
   };
 
   const deleteMessage = (message: Message) => {
@@ -217,7 +373,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
       <KeyboardAvoidingView
         style={styles.wrapper}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        keyboardVerticalOffset={0}
       >
         <TouchableOpacity style={styles.header} activeOpacity={0.8} onPress={() => navigation.navigate("Profile", { userId: participant._id, online: partnerOnline })} accessibilityLabel="View partner profile">
           <Image source={{ uri: participant.avatar }} style={styles.headerAvatar} />
@@ -232,32 +388,70 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
           <TouchableOpacity onPress={() => { const previous = activePinnedIndex > 0 ? String(pinnedMessages[activePinnedIndex - 1]._id) : null; togglePin(activePinnedMessage); setActivePinnedId(previous); }} style={styles.dismissPin} accessibilityLabel="Unpin message"><Text style={styles.dismissPinText}>X</Text></TouchableOpacity>
         </View>}
 
-        <FlatList
-          ref={listRef}
-          contentContainerStyle={styles.listContent}
-          data={messages}
-          keyExtractor={(item, index) => {
-            if (item.clientMessageId) return `msg-client-${item.clientMessageId}`;
-            const id = item._id || (item as any).id;
-            return id ? `msg-server-${id}` : `msg-fallback-${index}-${item.text.slice(0, 5)}`;
-          }}
-          renderItem={({ item }) => {
-            const senderId = typeof item.sender === "object" ? (item.sender?._id || (item.sender as any)?.id) : item.sender;
-            const currentUserId = user?._id || (user as any)?.id;
-            const isMe = String(senderId) === String(currentUserId);
+        <View style={styles.messageListContainer}>
+          <FlatList
+            ref={listRef}
+            contentContainerStyle={styles.listContent}
+            data={messages}
+            onScroll={({ nativeEvent }) => {
+              if (followStateBeforeKeyboardRef.current !== null) return;
+              const distanceFromBottom = nativeEvent.contentSize.height
+                - nativeEvent.layoutMeasurement.height
+                - nativeEvent.contentOffset.y;
+              const isAtBottom = distanceFromBottom < 80;
+              if (isAtBottom !== shouldFollowLatestRef.current) {
+                shouldFollowLatestRef.current = isAtBottom;
+                setShowScrollToBottom(!isAtBottom);
+              }
+              if (isAtBottom) markCurrentMessagesRead();
+            }}
+            scrollEventThrottle={16}
+            onScrollToIndexFailed={({ index, averageItemLength }) => {
+              listRef.current?.scrollToOffset({ offset: averageItemLength * index, animated: false });
+              requestAnimationFrame(() => listRef.current?.scrollToIndex({ index, animated: false }));
+            }}
+            keyExtractor={(item, index) => {
+              if (item.clientMessageId) return `msg-client-${item.clientMessageId}`;
+              const id = item._id || (item as any).id;
+              return id ? `msg-server-${id}` : `msg-fallback-${index}-${item.text.slice(0, 5)}`;
+            }}
+            renderItem={({ item }) => {
+              const senderId = typeof item.sender === "object" ? (item.sender?._id || (item.sender as any)?.id) : item.sender;
+              const currentUserId = user?._id || (user as any)?.id;
+              const isMe = String(senderId) === String(currentUserId);
 
-            return (
-              <TouchableOpacity key={item.clientMessageId ? `msg-client-${item.clientMessageId}` : `msg-server-${String(item._id ?? (item as any).id ?? `${item.text}-${item.createdAt}`)}`} onLongPress={() => item.status !== "pending" && item.status !== "failed" && setSelectedMessage(item)} delayLongPress={500} style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble, item.pinned && styles.pinnedBubble]}>
-                {item.replyTo && <View style={styles.replyQuote}><Text style={styles.replyQuoteName}>{item.replyTo.senderName}</Text><Text style={styles.replyQuoteText} numberOfLines={1}>{item.replyTo.text}</Text></View>}
-                <Text style={isMe ? styles.myText : styles.otherText}>{item.displayText ?? item.text}</Text>
-                {item.pinned && <Text style={isMe ? styles.pinMyText : styles.pinText}>Pinned</Text>}
-                {isMe && item.status === "pending" && <Text style={styles.messageStatus}>◷ Sending</Text>}
-                {isMe && item.status === "sent" && <Text style={styles.messageStatus}>✓✓</Text>}
-                {isMe && item.status === "failed" && <TouchableOpacity onPress={() => sendMessage(item.text, item.clientMessageId, item.replyTo ? ({ _id: item.replyTo._id, text: item.replyTo.text, sender: { _id: "", name: item.replyTo.senderName, avatar: "" } } as Message) : null, false)} accessibilityRole="button"><Text style={styles.retryText}>Failed · Retry</Text></TouchableOpacity>}
-              </TouchableOpacity>
-            );
-          }}
-        />
+              return (
+                <View>
+                  {String(item._id) === firstUnreadMessageId && <View style={styles.unreadDivider}>
+                    <View style={styles.unreadDividerLine} />
+                    <Text style={styles.unreadDividerText}>Unread Messages</Text>
+                    <View style={styles.unreadDividerLine} />
+                  </View>}
+                  <TouchableOpacity onLongPress={() => item.status !== "pending" && item.status !== "failed" && setSelectedMessage(item)} delayLongPress={500} style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble, item.pinned && styles.pinnedBubble]}>
+                    {item.replyTo && <View style={styles.replyQuote}><Text style={styles.replyQuoteName}>{item.replyTo.senderName}</Text><Text style={styles.replyQuoteText} numberOfLines={1}>{item.replyTo.text}</Text></View>}
+                    <Text style={isMe ? styles.myText : styles.otherText}>{item.displayText ?? item.text}</Text>
+                    {item.pinned && <Text style={isMe ? styles.pinMyText : styles.pinText}>Pinned</Text>}
+                    {isMe && item.status === "pending" && <Text style={styles.messageStatus}>◷ Sending</Text>}
+                    {isMe && item.status === "sent" && <Text style={styles.messageStatus}>✓✓</Text>}
+                    {isMe && item.status === "failed" && <TouchableOpacity onPress={() => sendMessage(item.text, item.clientMessageId, item.replyTo ? ({ _id: item.replyTo._id, text: item.replyTo.text, sender: { _id: "", name: item.replyTo.senderName, avatar: "" } } as Message) : null, false)} accessibilityRole="button"><Text style={styles.retryText}>Failed · Retry</Text></TouchableOpacity>}
+                  </TouchableOpacity>
+                </View>
+              );
+            }}
+          />
+          {showScrollToBottom && <TouchableOpacity
+            style={styles.scrollToBottomButton}
+            onPress={() => {
+              shouldFollowLatestRef.current = true;
+              setShowScrollToBottom(false);
+              listRef.current?.scrollToEnd({ animated: true });
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Scroll to bottom"
+          >
+            <Text style={styles.scrollToBottomText}>↓</Text>
+          </TouchableOpacity>}
+        </View>
 
         {replyTo && <View style={styles.replyComposer}><View style={styles.replyComposerBar} /><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>Replying to {replyTo.sender?.name || replyTo.replyTo?.senderName || "message"}</Text><Text style={styles.replyComposerText} numberOfLines={1}>{replyTo.displayText ?? replyTo.text}</Text></View><TouchableOpacity onPress={() => setReplyTo(null)}><Text style={styles.dismissPinText}>X</Text></TouchableOpacity></View>}
         <View style={styles.inputContainer}>
@@ -265,11 +459,30 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
             style={styles.input}
             placeholder="Type message..."
             value={text}
+            onFocus={() => {
+              if (!keyboardVisibleRef.current) {
+                followStateBeforeKeyboardRef.current = shouldFollowLatestRef.current;
+              }
+            }}
+            onBlur={() => {
+              if (!keyboardVisibleRef.current) followStateBeforeKeyboardRef.current = null;
+            }}
             onChangeText={setText}
             placeholderTextColor={AppColors.placeholder}
+            onSubmitEditing={() => {
+              if (text.trim()) sendMessage();
+            }}
+            returnKeyType="send"
+            blurOnSubmit={false}
+            multiline={false}
           />
-          <TouchableOpacity style={styles.sendBtn} onPress={() => sendMessage()}>
-            <Text style={styles.sendText}>Send</Text>
+          <TouchableOpacity
+            style={styles.sendBtn}
+            onPress={() => sendMessage()}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+          >
+            <Text style={styles.sendArrow}>➤</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -310,8 +523,31 @@ const styles = StyleSheet.create({
   pinnedPreview: { color: "rgba(255,255,255,0.7)", fontSize: 14, marginTop: 4 },
   dismissPin: { width: 48, alignItems: "center", justifyContent: "center", alignSelf: "stretch" },
   dismissPinText: { color: "rgba(255,255,255,0.65)", fontSize: 28, fontWeight: "300" },
+  unreadDivider: { flexDirection: "row", alignItems: "center", marginHorizontal: 12, marginTop: 12, marginBottom: 8 },
+  unreadDividerLine: { flex: 1, height: 1, backgroundColor: "rgba(20,42,68,0.2)" },
+  unreadDividerText: { color: AppColors.buttonInner, fontSize: 12, fontWeight: "700", paddingHorizontal: 10 },
   listContent: {
     paddingVertical: 12,
+  },
+  messageListContainer: {
+    flex: 1,
+  },
+  scrollToBottomButton: {
+    position: "absolute",
+    right: 16,
+    bottom: 14,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: AppColors.buttonOuter,
+    elevation: 4,
+  },
+  scrollToBottomText: {
+    color: AppColors.white,
+    fontSize: 24,
+    fontWeight: "700",
   },
   bubble: {
     padding: 10,
@@ -382,13 +618,17 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 18,
-    borderRadius: 20,
-    minWidth: 70,
+    width: 56,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: AppColors.buttonOuter,
   },
-  sendText: {
+  sendArrow: {
     color: AppColors.white,
+    fontSize: 25,
     fontWeight: "700",
+    lineHeight: 30,
+    textAlign: "center",
+    textAlignVertical: "center",
   },
 });

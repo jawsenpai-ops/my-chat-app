@@ -45,7 +45,7 @@ export const NotificationScreen: React.FC<Props> = ({ navigation }) => {
         renderItem={({ item }) => (
           <Pressable onPress={() => openNotification(item)} style={[styles.item, !item.isRead && styles.unread]}>
             <Image source={{ uri: item.sender.avatar }} style={styles.avatar} />
-            <View style={styles.copy}><Text style={styles.message}>{item.message}</Text><Text style={styles.time}>{new Date(item.createdAt).toLocaleString()}</Text></View>
+            <View style={styles.copy}><Text style={styles.message}>{item.message}</Text><Text style={styles.time}>{new Date(item.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}</Text></View>
             {!item.isRead && <View style={styles.dot} />}
           </Pressable>
         )}

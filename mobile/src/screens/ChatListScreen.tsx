@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, Animated, Easing, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import type { GestureResponderEvent } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList, Chat, ChatRequest, IncomingFriendRequest, User } from "../types";
@@ -12,6 +13,109 @@ import { AvatarWithStatus } from "../components/AvatarWithStatus";
 import { readCachedChats, saveCachedChats } from "../api/offlineChatCache";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ChatList">;
+
+type ChatListItemProps = {
+  item: Chat;
+  onlineUserIds: Set<string>;
+  onOpenChat: (chat: Chat, chatId: string | number) => void;
+  onLongPress: (chat: Chat) => void;
+};
+
+const ChatListItem: React.FC<ChatListItemProps> = ({ item, onlineUserIds, onOpenChat, onLongPress }) => {
+  const chatId = item._id || (item as any).id;
+  const pressScale = React.useRef(new Animated.Value(1)).current;
+  const rippleScale = React.useRef(new Animated.Value(0)).current;
+  const rippleOpacity = React.useRef(new Animated.Value(0)).current;
+  const cardSize = React.useRef({ width: 0, height: 0 });
+  const [ripple, setRipple] = React.useState({ diameter: 0, left: 0, top: 0 });
+
+  const animatePress = (pressed: boolean, event?: GestureResponderEvent) => {
+    Animated.spring(pressScale, {
+      toValue: pressed ? 0.98 : 1,
+      friction: 8,
+      tension: 100,
+      useNativeDriver: true,
+    }).start();
+
+    if (!pressed || !event) return;
+    const { width, height } = cardSize.current;
+    if (!width || !height) return;
+
+    const diameter = Math.hypot(width, height) * 2;
+    setRipple({
+      diameter,
+      left: event.nativeEvent.locationX - diameter / 2,
+      top: event.nativeEvent.locationY - diameter / 2,
+    });
+    rippleScale.stopAnimation();
+    rippleOpacity.stopAnimation();
+    rippleScale.setValue(0.05);
+    rippleOpacity.setValue(0.65);
+    Animated.parallel([
+      Animated.timing(rippleScale, {
+        toValue: 1,
+        duration: 420,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(rippleOpacity, {
+        toValue: 0,
+        delay: 80,
+        duration: 340,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
+
+  return (
+    <Pressable
+      style={{ borderRadius: 16, overflow: "hidden" }}
+      onPressIn={(event) => animatePress(true, event)}
+      onPressOut={() => animatePress(false)}
+      onPress={() => onOpenChat(item, chatId)}
+      onLongPress={() => onLongPress(item)}
+      delayLongPress={500}
+    >
+      <Animated.View
+        onLayout={({ nativeEvent }) => {
+          cardSize.current = { width: nativeEvent.layout.width, height: nativeEvent.layout.height };
+        }}
+        style={[styles.chatCard, { transform: [{ scale: pressScale }] }]}
+      >
+        <AvatarWithStatus
+          uri={item.participant?.avatar}
+          size={42}
+          online={onlineUserIds.has(String(item.participant?._id))}
+        />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.name}>{item.participant?.name}</Text>
+          <Text style={styles.lastMsg} numberOfLines={1}>{item.muted ? "Muted" : item.lastMessage?.text || "No messages"}</Text>
+        </View>
+        {item.pinned && <Text style={styles.pinMark}>Pinned</Text>}
+        {!!item.unreadCount && (
+          <View style={styles.unreadBadge}>
+            <Text style={styles.unreadText}>{item.unreadCount > 99 ? "99+" : item.unreadCount}</Text>
+          </View>
+        )}
+        {!!ripple.diameter && <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.ripple,
+            {
+              width: ripple.diameter,
+              height: ripple.diameter,
+              borderRadius: ripple.diameter / 2,
+              left: ripple.left,
+              top: ripple.top,
+              opacity: rippleOpacity,
+              transform: [{ scale: rippleScale }],
+            },
+          ]}
+        />}
+      </Animated.View>
+    </Pressable>
+  );
+};
 
 export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
   const [chats, setChats] = useState<Chat[]>([]);
@@ -88,9 +192,11 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
     };
     const handleNotification = () => { loadData(); };
     const handleFriendEvent = () => { loadData(); };
-    const handleChatRead = ({ chatId }: { chatId: string | number }) => {
+    const handleChatRead = ({ chatId, unreadCount }: { chatId: string | number; unreadCount?: number }) => {
       setChats((current) => current.map((chat) =>
-        String(chat._id) === String(chatId) ? { ...chat, unreadCount: 0 } : chat,
+        String(chat._id) === String(chatId)
+          ? { ...chat, unreadCount: typeof unreadCount === "number" && Number.isFinite(unreadCount) ? Math.max(0, unreadCount) : 0 }
+          : chat,
       ));
     };
     socket.on("online-users", handleOnlineUsers);
@@ -203,34 +309,14 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
           const key = item._id || (item as any).id;
           return key ? `chat-${key}-${index}` : `chat-idx-${index}`;
         }}
-        renderItem={({ item }) => {
-          const chatId = item._id || (item as any).id;
-          return (
-            <Pressable
-              android_ripple={{ color: "rgba(255,255,255,0.15)", foreground: true }}
-              style={({ pressed }) => [styles.chatCard, pressed && styles.chatCardPressed]}
-              onPress={() => item.participant && navigation.navigate("ChatRoom", { chatId: chatId, participant: item.participant })}
-              onLongPress={() => setSelectedChat(item)}
-              delayLongPress={500}
-            >
-              <AvatarWithStatus
-                uri={item.participant?.avatar}
-                size={42}
-                online={onlineUserIds.has(String(item.participant?._id))}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{item.participant?.name}</Text>
-                <Text style={styles.lastMsg} numberOfLines={1}>{item.muted ? "Muted" : item.lastMessage?.text || "No messages"}</Text>
-              </View>
-              {item.pinned && <Text style={styles.pinMark}>Pinned</Text>}
-              {!!item.unreadCount && (
-                <View style={styles.unreadBadge}>
-                  <Text style={styles.unreadText}>{item.unreadCount > 99 ? "99+" : item.unreadCount}</Text>
-                </View>
-              )}
-            </Pressable>
-          );
-        }}
+        renderItem={({ item }) => (
+          <ChatListItem
+            item={item}
+            onlineUserIds={onlineUserIds}
+            onOpenChat={(chat, chatId) => chat.participant && navigation.navigate("ChatRoom", { chatId: chatId, participant: chat.participant })}
+            onLongPress={setSelectedChat}
+          />
+        )}
       />
 
       <BottomTabBar
@@ -284,6 +370,7 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   chatCard: {
+    overflow: "hidden",
     flexDirection: "row",
     alignItems: "center",
     padding: 12,
@@ -291,6 +378,10 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: "#000000",
     borderWidth: 0,
+  },
+  ripple: {
+    position: "absolute",
+    backgroundColor: "rgba(255,255,255,0.28)",
   },
   chatCardPressed: {
     backgroundColor: "#1f1f1f",

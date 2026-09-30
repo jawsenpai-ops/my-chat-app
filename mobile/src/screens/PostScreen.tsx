@@ -6,6 +6,8 @@ import { apiCall } from "../api/client";
 import { normalizeCommentThreads, removeCommentBranch } from "../api/commentThreads";
 import { readCachedComments, readCachedPost, saveCachedComments, saveCachedPost } from "../api/offlinePostCache";
 import { CommentThreadList } from "../components/CommentThreadList";
+import { CommentBubbleIcon } from "../components/CommentBubbleIcon";
+import { LikeIcon } from "../components/LikeIcon";
 import { AppColors } from "../theme/colors";
 import { Post, PostComment, PostCommentsResponse, RootStackParamList, User } from "../types";
 import { useAuth } from "../context/AuthContext";
@@ -39,26 +41,33 @@ export const PostScreen: React.FC<Props> = ({ navigation, route }) => {
       setComments(cachedComments);
     }
 
+    let loadedPost: Post | null = cachedPost;
     try {
       const data = await apiCall<Post>(`/posts/${postId}`);
+      loadedPost = data;
       setPost(data);
       await saveCachedPost(postId, data);
+    } catch (error: any) {
+      if (!cachedPost) Alert.alert("Could not load post", error.message);
+    }
 
+    try {
       const commentData = normalizeCommentThreads(await apiCall<PostCommentsResponse | PostComment[]>(`/posts/${postId}/comments?limit=1000&offset=0`), 0, 1000);
       setComments(commentData.comments);
       await saveCachedComments(postId, commentData.comments);
-
-      if (data && data.author && data.author._id && String(data.author._id) !== String(user?._id)) {
-        const status = await apiCall<{ status: typeof friendStatus }>(`/friends/status/${data.author._id}`);
-        setFriendStatus(status.status ?? "none");
-      }
     } catch (error: any) {
-      if (!cachedPost) {
-        Alert.alert("Could not load post", error.message);
-      }
-    } finally {
-      setLoading(false);
+      Alert.alert("Could not load comments", error.message);
     }
+
+    if (loadedPost?.author?._id && String(loadedPost.author._id) !== String(user?._id)) {
+      try {
+        const status = await apiCall<{ status: typeof friendStatus }>(`/friends/status/${loadedPost.author._id}`);
+        setFriendStatus(status.status ?? "none");
+      } catch (error: any) {
+        Alert.alert("Could not load friend status", error.message);
+      }
+    }
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -198,7 +207,7 @@ export const PostScreen: React.FC<Props> = ({ navigation, route }) => {
                     </TouchableOpacity>
                   )}
                 </View>
-                <Text style={styles.meta}>{new Date(post.createdAt).toLocaleString()}</Text>
+                <Text style={styles.meta}>{new Date(post.createdAt).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}</Text>
               </View>
             </TouchableOpacity>
           </View>
@@ -223,8 +232,14 @@ export const PostScreen: React.FC<Props> = ({ navigation, route }) => {
           )}
 
           <View style={styles.actionRow}>
-            <TouchableOpacity onPress={toggleLike}><Text style={[styles.actionText, post.likedByMe && styles.liked]}>{post.likedByMe ? "Unlike" : "Like"} · {post.likeCount}</Text></TouchableOpacity>
-            <Text style={styles.actionText}>Comments · {post.commentCount}</Text>
+            <TouchableOpacity onPress={toggleLike} style={styles.likeAction} accessibilityRole="button" accessibilityLabel={post.likedByMe ? "Unlike post" : "Like post"} accessibilityState={{ selected: post.likedByMe }}>
+              <LikeIcon liked={!!post.likedByMe} />
+              <Text style={styles.actionText}>{post.likeCount}</Text>
+            </TouchableOpacity>
+            <View style={styles.commentCountAction}>
+              <CommentBubbleIcon />
+              <Text style={styles.actionText}>{post.commentCount}</Text>
+            </View>
           </View>
         </View>
 
@@ -299,6 +314,8 @@ const styles = StyleSheet.create({
   feedPhoto: { width: Dimensions.get("window").width - 56, aspectRatio: 4 / 5, borderRadius: 12, backgroundColor: AppColors.whiteSoft },
   actionRow: { flexDirection: "row", gap: 22, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: "rgba(20,42,68,0.08)" },
   actionText: { color: AppColors.primaryDark, fontWeight: "600", fontSize: 13 },
+  commentCountAction: { flexDirection: "row", alignItems: "center", gap: 6 },
+  likeAction: { flexDirection: "row", alignItems: "center", gap: 6 },
   liked: { color: AppColors.buttonInner },
   commentsPanel: { backgroundColor: AppColors.surface, borderRadius: 16, padding: 14 },
   sectionTitle: { color: AppColors.primaryDark, fontWeight: "700", fontSize: 16, marginBottom: 12 },
