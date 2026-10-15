@@ -4,6 +4,7 @@ import { getChats, getOrCreateChat, updateChatAction } from "../controllers/chat
 import { chatRateLimiter } from "../middleware/rateLimit";
 
 const router = Router();
+
 router.use(protectRoute);
 router.use(chatRateLimiter);
 router.get("/", getChats);

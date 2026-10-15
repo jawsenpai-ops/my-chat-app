@@ -160,7 +160,10 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
   };
 
   const confirmDeleteAccount = () => {
-    Alert.alert("Delete account", "This permanently deletes your account. Continue?", [
+    Alert.alert(
+      "Permanently delete account?",
+      "This action cannot be undone. Your account will be deleted and you will be signed out. Are you sure you want to continue?",
+      [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: async () => {
         try {
@@ -168,7 +171,8 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
           await logout();
         } catch (error: any) { Alert.alert("Could not delete account", error.message); }
       } },
-    ]);
+      ],
+    );
   };
 
   const sendFeedback = async () => {
@@ -214,7 +218,7 @@ export const ProfileScreen: React.FC<Props> = ({ navigation, route }) => {
             <AvatarWithStatus uri={profile?.avatar} size={104} online={profileOnline} />
           )}
           <Text style={styles.name}>{profile?.name || "User"}</Text>
-          <Text style={styles.email}>{profile?.email}</Text>
+          {isOwnProfile && !!profile?.email && <Text style={styles.email}>{profile.email}</Text>}
           {!isOwnProfile && <View style={styles.friendActions}>{friendRelationship.status === "none" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("add")} style={styles.friendButton}><Text style={styles.friendButtonText}>{friendLoading ? "..." : "Add Friend"}</Text></TouchableOpacity>}{friendRelationship.status === "pending_sent" && <TouchableOpacity disabled={friendLoading} onPress={() => friendAction("cancel")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Cancel Request</Text></TouchableOpacity>}{friendRelationship.status === "pending_received" && <><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("accept")} style={styles.friendButton}><Text style={styles.friendButtonText}>Confirm</Text></TouchableOpacity><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("decline")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Delete</Text></TouchableOpacity></>}{friendRelationship.status === "friends" && <><TouchableOpacity disabled={friendLoading} onPress={() => friendAction("remove")} style={styles.friendButtonSecondary}><Text style={styles.friendButtonSecondaryText}>Friends ✓</Text></TouchableOpacity><TouchableOpacity disabled={messageLoading} onPress={openChat} style={styles.friendButton}><Text style={styles.friendButtonText}>{messageLoading ? "..." : "Message"}</Text></TouchableOpacity></>}{friendRelationship.status === "blocked" && <Text style={styles.blockedText}>Blocked</Text>}</View>}
         </View>
 

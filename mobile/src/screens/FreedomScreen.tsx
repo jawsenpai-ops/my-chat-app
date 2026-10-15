@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Alert, Dimensions, FlatList, Image, Modal, RefreshControl, Share, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Alert, Dimensions, FlatList, Image, KeyboardAvoidingView, Modal, Platform, RefreshControl, Share, StatusBar, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { apiCall } from "../api/client";
@@ -24,6 +24,11 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
   const [composerVisible, setComposerVisible] = useState(false);
+  const [accountSearchVisible, setAccountSearchVisible] = useState(false);
+  const [accountSearch, setAccountSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [searchingAccounts, setSearchingAccounts] = useState(false);
+  const [accountSearchError, setAccountSearchError] = useState("");
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [body, setBody] = useState("");
   const [images, setImages] = useState<SelectedImage[]>([]);
@@ -49,6 +54,44 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
   const [highlightedPostId, setHighlightedPostId] = useState<string | null>(null);
   const postsRef = useRef<FlatList<Post>>(null);
   const socket = getSocket();
+
+  useEffect(() => {
+    if (!accountSearchVisible) return;
+    const query = accountSearch.trim();
+    if (!query) {
+      setSearchResults([]);
+      setSearchingAccounts(false);
+      setAccountSearchError("");
+      return;
+    }
+
+    let cancelled = false;
+    const timeout = setTimeout(() => {
+      setSearchingAccounts(true);
+      setAccountSearchError("");
+      apiCall<User[]>(`/users?search=${encodeURIComponent(query)}`)
+        .then((results) => {
+          if (!cancelled) {
+            const normalizedQuery = query.toLocaleLowerCase();
+            setSearchResults(results.filter((account) => account.name.toLocaleLowerCase().includes(normalizedQuery)));
+          }
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setSearchResults([]);
+            setAccountSearchError(error instanceof Error ? error.message : "Could not search accounts.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setSearchingAccounts(false);
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [accountSearch, accountSearchVisible]);
 
   const loadPosts = async () => {
     const cachedPosts = await readCachedPosts();
@@ -269,7 +312,7 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
       {(item.imageUrls?.length || item.imageUrl) ? (() => {
         const photos = item.imageUrls?.length ? item.imageUrls : [item.imageUrl as string];
         const postKey = String(item._id);
-        return <View style={{ position: "relative" }}><FlatList horizontal pagingEnabled showsHorizontalScrollIndicator={false} data={photos} keyExtractor={(_, index) => `${item._id}-${index}`} onMomentumScrollEnd={(event) => { const pageWidth = Dimensions.get("window").width - 56; const index = Math.round(event.nativeEvent.contentOffset.x / pageWidth); setCarouselIndexes((current) => ({ ...current, [postKey]: index })); }} renderItem={({ item: uri, index }) => <TouchableOpacity onPress={() => openFullScreen(photos, index)} activeOpacity={0.9}><Image source={{ uri }} style={styles.feedPhoto} resizeMode="cover" /></TouchableOpacity>} />{photos.length > 1 && <View style={styles.carouselIndicator}><Text style={styles.carouselIndicatorText}>{(carouselIndexes[postKey] || 0) + 1}/{photos.length}</Text></View>}</View>;
+        return <View style={{ position: "relative" }}><FlatList horizontal pagingEnabled showsHorizontalScrollIndicator={false} data={photos} keyExtractor={(_, index) => `${item._id}-${index}`} onMomentumScrollEnd={(event) => { const pageWidth = Dimensions.get("window").width - 56; const index = Math.round(event.nativeEvent.contentOffset.x / pageWidth); setCarouselIndexes((current) => ({ ...current, [postKey]: index })); }} renderItem={({ item: uri, index }) => <TouchableOpacity onPress={() => openFullScreen(photos, index)} activeOpacity={1}><Image source={{ uri }} style={styles.feedPhoto} resizeMode="cover" /></TouchableOpacity>} />{photos.length > 1 && <View style={styles.carouselIndicator}><Text style={styles.carouselIndicatorText}>{(carouselIndexes[postKey] || 0) + 1}/{photos.length}</Text></View>}</View>;
       })() : null}
       <View style={styles.actionRow}><TouchableOpacity onPress={() => toggleLike(item)} style={{ flexDirection: "row", alignItems: "center", gap: 6 }} accessibilityRole="button" accessibilityLabel={item.likedByMe ? "Unlike post" : "Like post"} accessibilityState={{ selected: !!item.likedByMe }}><LikeIcon liked={!!item.likedByMe} /><Text style={styles.actionText}>{item.likeCount}</Text></TouchableOpacity><TouchableOpacity onPress={() => showComments(item)} style={{ flexDirection: "row", alignItems: "center", gap: 6 }} accessibilityRole="button" accessibilityLabel="View comments"><CommentBubbleIcon /><Text style={styles.actionText}>{item.commentCount}</Text></TouchableOpacity></View>
       {commentsFor === String(item._id) && <View style={styles.comments}><CommentThreadList comments={previewComments} userId={user?._id} postAuthorId={item.author._id} expandedReplyThreads={expandedReplyThreads} onReply={startReply} onDelete={(comment) => deleteComment(item, comment)} onToggleReplies={toggleReplies} />{(topLevelComments.length > 10 || commentsHasMore) && <TouchableOpacity onPress={() => openFullComments(item)} disabled={commentsLoading}><Text style={styles.seeMore}>{commentsLoading ? "Loading..." : "See More Comments"}</Text></TouchableOpacity>}<View style={styles.commentComposer}>{replyTo && <Text style={styles.replyingTo}>Replying to @{replyTo.author.name}</Text>}<TextInput value={commentText} onChangeText={setCommentText} placeholder={replyTo ? `Reply to @${replyTo.author.name}` : "Write a comment..."} placeholderTextColor={AppColors.placeholder} style={styles.commentInput} /><TouchableOpacity onPress={() => addComment(item)}><Text style={styles.postLink}>Post</Text></TouchableOpacity></View></View>}
@@ -283,9 +326,66 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
       showCreate
       onCreatePress={() => openComposer()}
       onProfilePress={() => navigation.navigate("Profile")}
-      onActionPress={() => undefined}
+      onActionPress={() => {
+        setAccountSearch("");
+        setSearchResults([]);
+        setAccountSearchVisible(true);
+      }}
       actionIcon="search"
     />
+    <Modal visible={accountSearchVisible} animationType="slide" transparent onRequestClose={() => setAccountSearchVisible(false)}>
+      <KeyboardAvoidingView style={styles.searchModalBackdrop} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <View style={styles.accountSearchPanel}>
+          <View style={styles.accountSearchHeader}>
+            <Text style={styles.modalTitle}>Find people</Text>
+            <TouchableOpacity onPress={() => setAccountSearchVisible(false)} accessibilityRole="button" accessibilityLabel="Close account search">
+              <Text style={styles.closeComments}>X</Text>
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            value={accountSearch}
+            onChangeText={(value) => {
+              setAccountSearch(value);
+              setSearchResults([]);
+            }}
+            placeholder="Search accounts by name"
+            placeholderTextColor={AppColors.placeholder}
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoFocus
+            style={styles.accountSearchInput}
+            accessibilityLabel="Search accounts by name"
+          />
+          {searchingAccounts ? <ActivityIndicator color={AppColors.buttonInner} style={styles.accountSearchStatus} /> : null}
+          {!!accountSearchError && <Text style={styles.accountSearchMessage}>{accountSearchError}</Text>}
+          {!accountSearch.trim() && <Text style={styles.accountSearchMessage}>Type a name to find an account.</Text>}
+          {!!accountSearch.trim() && !searchingAccounts && !accountSearchError
+            && !searchResults.some((account) => account.name.toLocaleLowerCase().includes(accountSearch.trim().toLocaleLowerCase()))
+            && <Text style={styles.accountSearchMessage}>No matching accounts found.</Text>}
+          <FlatList
+            data={searchResults.filter((account) => account.name.toLocaleLowerCase().includes(accountSearch.trim().toLocaleLowerCase()))}
+            keyExtractor={(account) => `search-account-${String(account._id)}`}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                style={styles.searchResultRow}
+                onPress={() => {
+                  setAccountSearchVisible(false);
+                  navigation.navigate("Profile", { userId: item._id, online: onlineIds.has(String(item._id)) });
+                }}
+                accessibilityRole="button"
+              >
+                {item.avatar
+                  ? <Image source={{ uri: item.avatar }} style={styles.searchResultAvatar} />
+                  : <View style={[styles.searchResultAvatar, styles.searchResultAvatarFallback]}><Text style={styles.searchResultInitial}>{item.name?.charAt(0).toUpperCase() || "?"}</Text></View>}
+                <Text style={styles.searchResultName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.searchResultArrow}>›</Text>
+              </TouchableOpacity>
+            )}
+          />
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
     <Modal visible={composerVisible} animationType="slide" transparent onRequestClose={() => setComposerVisible(false)}><View style={styles.modalBackdrop}><CreatePostComposer body={body} images={images} onBodyChange={setBody} onImagesChange={setImages} onSubmit={savePost} onCancel={() => setComposerVisible(false)} submitLabel={editingPost ? "Save Changes" : "Post"} authorName={user?.name} authorAvatar={user?.avatar} lockImages={!!editingPost} /></View></Modal>
     <Modal visible={!!menuPost} animationType="slide" transparent onRequestClose={() => setMenuPost(null)}><View style={styles.modalBackdrop}><View style={styles.menu}><TouchableOpacity onPress={() => { setMenuPost(null); Share.share({ message: `https://ikiyadm.com/posts/${menuPost?._id}` }); }}><Text style={styles.menuItem}>Copy link</Text></TouchableOpacity><TouchableOpacity onPress={() => { setSharePost(menuPost); setMenuPost(null); }}><Text style={styles.menuItem}>Send to my friend</Text></TouchableOpacity>{menuPost?.isOwner && <><TouchableOpacity onPress={() => { const post = menuPost; setMenuPost(null); openComposer(post); }}><Text style={styles.menuItem}>Edit post</Text></TouchableOpacity><TouchableOpacity onPress={() => deletePost(menuPost)}><Text style={[styles.menuItem, styles.danger]}>Delete post</Text></TouchableOpacity></>}</View></View></Modal>
     <Modal visible={!!sharePost} animationType="slide" transparent onRequestClose={() => setSharePost(null)}><View style={styles.modalBackdrop}><View style={styles.menu}><Text style={styles.modalTitle}>Send to my friend</Text>{users.filter((friend) => friend.isPartner === true).map((friend) => <TouchableOpacity key={String(friend._id)} onPress={() => shareToFriend(friend)} style={styles.friend}><Image source={{ uri: friend.avatar }} style={styles.commentAvatar} /><Text style={styles.menuItem}>{friend.name}</Text></TouchableOpacity>)}<TouchableOpacity onPress={() => setSharePost(null)}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity></View></View></Modal>
@@ -294,6 +394,18 @@ export const FreedomScreen: React.FC<Props> = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
+  searchModalBackdrop: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.48)" },
+  accountSearchPanel: { backgroundColor: AppColors.background, borderTopLeftRadius: 22, borderTopRightRadius: 22, padding: 20, height: "76%" },
+  accountSearchHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  accountSearchInput: { height: 48, borderRadius: 13, backgroundColor: AppColors.white, color: AppColors.inputText, paddingHorizontal: 14, marginBottom: 10 },
+  accountSearchStatus: { marginVertical: 18 },
+  accountSearchMessage: { color: AppColors.textMuted, textAlign: "center", paddingVertical: 18 },
+  searchResultRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "rgba(20,42,68,0.08)" },
+  searchResultAvatar: { width: 42, height: 42, borderRadius: 21, marginRight: 12, backgroundColor: AppColors.whiteSoft },
+  searchResultAvatarFallback: { alignItems: "center", justifyContent: "center" },
+  searchResultInitial: { color: AppColors.primaryDark, fontSize: 16, fontWeight: "700" },
+  searchResultName: { flex: 1, color: AppColors.primaryDark, fontSize: 15, fontWeight: "700" },
+  searchResultArrow: { color: AppColors.textMuted, fontSize: 25, marginLeft: 8 },
   authorCopy: { flex: 1, minWidth: 0 }, authorNameRow: { flexDirection: "row", alignItems: "center", gap: 8 }, addFriendLabel: { color: AppColors.buttonInner, fontSize: 11, fontWeight: "700" }, pendingLabel: { color: AppColors.textMuted, fontSize: 11, fontWeight: "700" }, partnerLabel: { color: AppColors.success, fontSize: 11, fontWeight: "700" },
   container: { flex: 1, backgroundColor: AppColors.background }, feedPhoto: { width: Dimensions.get("window").width - 56, aspectRatio: 4 / 5, borderRadius: 12, marginTop: 12, backgroundColor: AppColors.whiteSoft }, carouselIndicator: { position: "absolute", right: 10, top: 20, backgroundColor: "rgba(0,0,0,0.65)", borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5 }, carouselIndicatorText: { color: AppColors.white, fontSize: 12, fontWeight: "700" }, reply: { marginLeft: 36 }, replyLink: { color: AppColors.buttonInner, fontSize: 11, fontWeight: "700", marginTop: 3 },
   header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 18, paddingVertical: 10, backgroundColor: AppColors.primaryDark },

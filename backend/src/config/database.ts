@@ -3,7 +3,7 @@ import type { RowDataPacket } from "mysql2";
 import dotenv from "dotenv";
 import path from "path";
 
-const envPath = process.env.ENV_PATH || path.resolve(process.cwd(), ".env");
+const envPath = process.env.ENV_PATH || path.resolve(__dirname, "../../.env");
 dotenv.config({ path: envPath });
 
 export const db = mysql.createPool({
@@ -24,6 +24,8 @@ export async function connectDB() {
     await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30) NOT NULL DEFAULT ''");
     await db.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS bio VARCHAR(500) NOT NULL DEFAULT ''");
     await db.query("ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS lastReadAt DATETIME NULL");
+    await db.query("ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS lastReadMessageId INT NULL");
+    await db.query("ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS lastViewedMessageId INT NULL");
     await db.query("ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS pinned TINYINT(1) NOT NULL DEFAULT 0");
     await db.query("ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS muted TINYINT(1) NOT NULL DEFAULT 0");
     await db.query("ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS hidden_at DATETIME NULL");

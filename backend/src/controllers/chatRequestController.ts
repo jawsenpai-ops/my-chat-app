@@ -8,11 +8,11 @@ export async function getRequests(req: AuthRequest, res: Response, next: NextFun
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT r.id, r.sender_id AS senderId, r.recipient_id AS recipientId, r.status, r.created_at AS createdAt,
-              u.name, u.email, u.avatar
+              u.name, u.avatar
        FROM chat_requests r JOIN users u ON u.id = r.sender_id
        WHERE r.recipient_id = ? AND r.status = 'pending' ORDER BY r.created_at DESC`, [req.userId],
     );
-    return res.json(rows.map((row) => ({ _id: row.id, status: row.status, createdAt: row.createdAt, sender: { _id: row.senderId, name: row.name, email: row.email, avatar: row.avatar } })));
+    return res.json(rows.map((row) => ({ _id: row.id, status: row.status, createdAt: row.createdAt, sender: { _id: row.senderId, name: row.name, avatar: row.avatar } })));
   } catch (error) { return next(error); }
 }
 

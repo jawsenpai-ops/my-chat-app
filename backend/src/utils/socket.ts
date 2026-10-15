@@ -136,22 +136,119 @@ export const initializeSocket = (httpServer: HttpServer) => {
       }
     });
 
-    socket.on("chat-read", async (chatId: string) => {
-      if (!consumeSocketLimit(socket, userId, "chat-read", 60, 60_000)) return;
-      if (typeof chatId !== "string" || !/^\d+$/.test(chatId)) return;
+    socket.on("chat-read", async (
+      data: { chatId: string; messageId: string | number },
+      acknowledge?: (result: { ok: boolean; chatId: string; lastReadMessageId?: number; firstUnreadMessageId?: number | null; unreadCount?: number }) => void,
+    ) => {
+      const chatId = data?.chatId;
+      const messageId = Number(data?.messageId);
+      if (!consumeSocketLimit(socket, userId, "chat-read", 60, 60_000)) {
+        acknowledge?.({ ok: false, chatId: String(chatId ?? "") });
+        return;
+      }
+      if (typeof chatId !== "string" || !/^\d+$/.test(chatId) || !Number.isSafeInteger(messageId) || messageId < 1) {
+        acknowledge?.({ ok: false, chatId: String(chatId ?? "") });
+        return;
+      }
       try {
         const [chatAccess] = await db.query<RowDataPacket[]>(
           "SELECT chatId FROM chat_participants WHERE chatId = ? AND userId = ?",
           [chatId, userId],
         );
-        if (chatAccess.length === 0) return;
+        if (chatAccess.length === 0) {
+          acknowledge?.({ ok: false, chatId });
+          return;
+        }
+        const [readableMessages] = await db.query<RowDataPacket[]>(
+          "SELECT id, createdAt FROM messages WHERE id = ? AND chatId = ? AND deleted_at IS NULL",
+          [messageId, chatId],
+        );
+        if (readableMessages.length === 0) {
+          acknowledge?.({ ok: false, chatId });
+          return;
+        }
         await db.query(
-          "UPDATE chat_participants SET lastReadAt = NOW() WHERE chatId = ? AND userId = ?",
+          `UPDATE chat_participants
+           SET lastReadAt = IF(lastReadMessageId IS NULL OR lastReadMessageId < ?, ?, lastReadAt),
+               lastReadMessageId = GREATEST(COALESCE(lastReadMessageId, 0), ?)
+           WHERE chatId = ? AND userId = ?`,
+          [messageId, readableMessages[0].createdAt, messageId, chatId, userId],
+        );
+        const [readState] = await db.query<RowDataPacket[]>(
+          `SELECT COUNT(unread_m.id) AS unreadCount,
+            (
+              SELECT unread_next.id
+              FROM messages unread_next
+              WHERE unread_next.chatId = cp.chatId
+                AND unread_next.senderId != cp.userId
+                AND unread_next.deleted_at IS NULL
+                AND (
+                  (cp.lastReadMessageId IS NOT NULL AND unread_next.id > cp.lastReadMessageId)
+                  OR (cp.lastReadMessageId IS NULL AND (cp.lastReadAt IS NULL OR unread_next.createdAt > cp.lastReadAt))
+                )
+              ORDER BY unread_next.createdAt ASC, unread_next.id ASC
+              LIMIT 1
+            ) AS firstUnreadMessageId
+           FROM chat_participants cp
+           LEFT JOIN messages unread_m ON unread_m.chatId = cp.chatId
+             AND unread_m.senderId != cp.userId
+             AND unread_m.deleted_at IS NULL
+             AND (
+               (cp.lastReadMessageId IS NOT NULL AND unread_m.id > cp.lastReadMessageId)
+               OR (cp.lastReadMessageId IS NULL AND (cp.lastReadAt IS NULL OR unread_m.createdAt > cp.lastReadAt))
+             )
+           WHERE cp.chatId = ? AND cp.userId = ?
+           GROUP BY cp.chatId, cp.userId, cp.lastReadAt, cp.lastReadMessageId`,
           [chatId, userId],
         );
-        socket.emit("chat-read", { chatId });
+        const result = {
+          ok: true,
+          chatId,
+          lastReadMessageId: messageId,
+          firstUnreadMessageId: readState[0]?.firstUnreadMessageId ?? null,
+          unreadCount: Number(readState[0]?.unreadCount ?? 0),
+        };
+        socket.emit("chat-read", result);
+        acknowledge?.(result);
       } catch (error) {
-        // Reading a chat should not interrupt the conversation.
+        acknowledge?.({ ok: false, chatId });
+      }
+    });
+
+    socket.on("chat-viewed", async (
+      data: { chatId: string; messageId: string | number },
+      acknowledge?: (result: { ok: boolean; chatId: string; messageId?: number }) => void,
+    ) => {
+      const chatId = data?.chatId;
+      const messageId = Number(data?.messageId);
+      if (!consumeSocketLimit(socket, userId, "chat-viewed", 60, 60_000)) {
+        acknowledge?.({ ok: false, chatId: String(chatId ?? "") });
+        return;
+      }
+      if (typeof chatId !== "string" || !/^\d+$/.test(chatId) || !Number.isSafeInteger(messageId) || messageId < 1) {
+        acknowledge?.({ ok: false, chatId: String(chatId ?? "") });
+        return;
+      }
+
+      try {
+        const [readableMessages] = await db.query<RowDataPacket[]>(
+          `SELECT m.id FROM messages m
+           JOIN chat_participants cp ON cp.chatId = m.chatId AND cp.userId = ?
+           WHERE m.id = ? AND m.chatId = ? AND m.deleted_at IS NULL`,
+          [userId, messageId, chatId],
+        );
+        if (readableMessages.length === 0) {
+          acknowledge?.({ ok: false, chatId });
+          return;
+        }
+
+        await db.query(
+          "UPDATE chat_participants SET lastViewedMessageId = ? WHERE chatId = ? AND userId = ?",
+          [messageId, chatId, userId],
+        );
+        acknowledge?.({ ok: true, chatId, messageId });
+      } catch (error) {
+        acknowledge?.({ ok: false, chatId });
       }
     });
 

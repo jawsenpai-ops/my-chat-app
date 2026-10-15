@@ -223,7 +223,7 @@ export const PostScreen: React.FC<Props> = ({ navigation, route }) => {
                 data={photos}
                 keyExtractor={(_, index) => `${post._id}-${index}`}
                 renderItem={({ item, index }) => (
-                  <TouchableOpacity onPress={() => openFullScreen(photos, index)} activeOpacity={0.9}>
+                  <TouchableOpacity onPress={() => openFullScreen(photos, index)} activeOpacity={1}>
                     <Image source={{ uri: item }} style={styles.feedPhoto} resizeMode="cover" />
                   </TouchableOpacity>
                 )}

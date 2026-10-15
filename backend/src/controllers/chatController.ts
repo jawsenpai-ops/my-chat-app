@@ -16,7 +16,6 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
         cp.muted,
         u.id AS participant_id,
         u.name AS participant_name,
-        u.email AS participant_email,
         u.avatar AS participant_avatar,
         m.id AS message_id,
         m.text AS message_text,
@@ -26,7 +25,10 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
           FROM messages unread_m
           WHERE unread_m.chatId = c.id
             AND unread_m.senderId != ?
-            AND (cp.lastReadAt IS NULL OR unread_m.createdAt > cp.lastReadAt)
+            AND (
+              (cp.lastReadMessageId IS NOT NULL AND unread_m.id > cp.lastReadMessageId)
+              OR (cp.lastReadMessageId IS NULL AND (cp.lastReadAt IS NULL OR unread_m.createdAt > cp.lastReadAt))
+            )
         ) AS unread_count
       FROM chats c
       JOIN chat_participants cp ON c.id = cp.chatId
@@ -47,7 +49,6 @@ export async function getChats(req: AuthRequest, res: Response, next: NextFuncti
       participant: {
         _id: row.participant_id,
         name: row.participant_name,
-        email: row.participant_email,
         avatar: row.participant_avatar,
       },
       lastMessage: row.message_id ? {
@@ -103,7 +104,7 @@ export async function getOrCreateChat(req: AuthRequest, res: Response, next: Nex
     }
 
     const [participantRows] = await db.query<RowDataPacket[]>(
-      "SELECT id AS _id, name, email, avatar FROM users WHERE id = ? AND deleted_at IS NULL",
+      "SELECT id AS _id, name, avatar FROM users WHERE id = ? AND deleted_at IS NULL",
       [participantId]
     );
 

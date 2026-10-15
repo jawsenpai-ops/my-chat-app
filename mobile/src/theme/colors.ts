@@ -19,6 +19,7 @@ export const AppColors = {
   bubbleMine: '#142A44',
   buttonOuter: '#cf9892',
   buttonInner: '#6968a6',
+  heart: '#d72638',
   success: '#28a745',
 };
 

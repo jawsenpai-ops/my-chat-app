@@ -6,10 +6,21 @@ import type { RowDataPacket } from "mysql2";
 export async function getUsers(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const userId = req.userId;
-    const [users] = await db.query<RowDataPacket[]>(
-      "SELECT id AS _id, name, email, avatar FROM users WHERE id != ? AND deleted_at IS NULL LIMIT 50",
-      [userId]
-    );
+    const rawSearch = req.query.search;
+    if (rawSearch !== undefined && typeof rawSearch !== "string") {
+      return res.status(400).json({ message: "Search must be a single text value." });
+    }
+    const search = typeof rawSearch === "string" ? rawSearch.trim() : "";
+    if (search.length > 100) return res.status(400).json({ message: "Search must be 100 characters or fewer." });
+    const [users] = search
+      ? await db.query<RowDataPacket[]>(
+        "SELECT id AS _id, name, avatar FROM users WHERE id != ? AND deleted_at IS NULL AND LOWER(name) LIKE LOWER(?) ORDER BY name LIMIT 50",
+        [userId, `%${search.replace(/[\\%_]/g, "\\$&")}%`],
+      )
+      : await db.query<RowDataPacket[]>(
+        "SELECT id AS _id, name, avatar FROM users WHERE id != ? AND deleted_at IS NULL LIMIT 50",
+        [userId],
+      );
 
     res.json(users);
   } catch (error) {
@@ -62,7 +73,7 @@ export async function getPublicProfile(req: AuthRequest, res: Response, next: Ne
     const userId = Number(req.params.userId);
     if (!Number.isSafeInteger(userId) || userId < 1) return res.status(400).json({ message: "Invalid user ID" });
     const [users] = await db.query<RowDataPacket[]>(
-      "SELECT id AS _id, name, email, avatar, bio, role, createdAt FROM users WHERE id = ? AND deleted_at IS NULL",
+      "SELECT id AS _id, name, avatar, bio, role, createdAt FROM users WHERE id = ? AND deleted_at IS NULL",
       [userId],
     );
     if (users.length === 0) return res.status(404).json({ message: "User not found" });

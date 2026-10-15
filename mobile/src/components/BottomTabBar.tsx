@@ -76,7 +76,16 @@ export const BottomTabBar: React.FC<Props> = ({ onProfilePress, onCreatePress, o
           onPress={onActionPress}
           style={styles.actionButton}
         >
-          <Animated.Text style={[styles.actionIcon, { transform: [{ scale: iconProgress }] }]}>{visibleActionIcon === "search" ? "Q" : "∆"}</Animated.Text>
+          <Animated.View style={{ transform: [{ scale: iconProgress }] }}>
+            {visibleActionIcon === "search" ? (
+              <View style={styles.searchIcon}>
+                <View style={styles.searchLens} />
+                <View style={styles.searchHandle} />
+              </View>
+            ) : (
+              <Text style={styles.actionIcon}>∆</Text>
+            )}
+          </Animated.View>
         </TouchableOpacity>
       </View>
     </View>
@@ -170,5 +179,26 @@ const styles = StyleSheet.create({
     color: AppColors.white,
     fontSize: 23,
     fontWeight: "600",
+  },
+  searchIcon: {
+    width: 24,
+    height: 24,
+  },
+  searchLens: {
+    width: 17,
+    height: 17,
+    borderWidth: 2.5,
+    borderColor: AppColors.white,
+    borderRadius: 9,
+  },
+  searchHandle: {
+    position: "absolute",
+    width: 9,
+    height: 2.5,
+    right: 0,
+    bottom: 2,
+    borderRadius: 2,
+    backgroundColor: AppColors.white,
+    transform: [{ rotate: "45deg" }],
   },
 });

@@ -2,7 +2,7 @@ import { encryptText } from "../utils/crypto";
 import type { Response, NextFunction } from "express";
 import type { AuthRequest } from "../middleware/auth";
 import { db } from "../config/database";
-import type { RowDataPacket } from "mysql2";
+import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { decryptText } from "../utils/crypto";
 
 export async function getMessages(req: AuthRequest, res: Response, next: NextFunction) {
@@ -23,11 +23,6 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
       return res.status(404).json({ message: "Chat not found" });
     }
 
-    await db.query(
-      "UPDATE chat_participants SET lastReadAt = NOW() WHERE chatId = ? AND userId = ?",
-      [chatId, userId],
-    );
-
     const query = `
       SELECT 
         m.id AS _id,
@@ -41,7 +36,6 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
         m.chatId AS chat,
         u.id AS sender_id,
         u.name AS sender_name,
-        u.email AS sender_email,
         u.avatar AS sender_avatar
       FROM messages m
       JOIN users u ON m.senderId = u.id
@@ -64,12 +58,120 @@ export async function getMessages(req: AuthRequest, res: Response, next: NextFun
       sender: {
         _id: row.sender_id,
         name: row.sender_name,
-        email: row.sender_email,
         avatar: row.sender_avatar,
       },
     }));
 
     return res.json(formattedMessages);
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function getChatReadState(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const chatId = Number(req.params.chatId);
+    if (!Number.isSafeInteger(chatId) || chatId < 1) return res.status(400).json({ message: "Invalid chat ID" });
+
+    const [rows] = await db.query<RowDataPacket[]>(
+      `SELECT cp.lastReadAt, cp.lastReadMessageId, cp.lastViewedMessageId,
+        (
+          SELECT unread_m.id
+          FROM messages unread_m
+          WHERE unread_m.chatId = cp.chatId
+            AND unread_m.senderId != cp.userId
+            AND unread_m.deleted_at IS NULL
+            AND (
+              (cp.lastReadMessageId IS NOT NULL AND unread_m.id > cp.lastReadMessageId)
+              OR (cp.lastReadMessageId IS NULL AND (cp.lastReadAt IS NULL OR unread_m.createdAt > cp.lastReadAt))
+            )
+          ORDER BY unread_m.createdAt ASC, unread_m.id ASC
+          LIMIT 1
+        ) AS firstUnreadMessageId
+      FROM chat_participants cp
+      WHERE cp.chatId = ? AND cp.userId = ?`,
+      [chatId, req.userId],
+    );
+
+    if (rows.length === 0) return res.status(404).json({ message: "Chat not found" });
+    return res.json({
+      lastReadAt: rows[0].lastReadAt,
+      lastReadMessageId: rows[0].lastReadMessageId,
+      lastViewedMessageId: rows[0].lastViewedMessageId,
+      firstUnreadMessageId: rows[0].firstUnreadMessageId,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+export async function sendMessage(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const chatId = Number(req.params.chatId);
+    const { text, replyToId, clientMessageId } = req.body ?? {};
+
+    if (!Number.isSafeInteger(chatId) || chatId < 1) return res.status(400).json({ message: "Invalid chat ID" });
+    if (typeof text !== "string" || text.trim().length === 0 || text.length > 4_000) return res.status(400).json({ message: "Invalid message" });
+    if (clientMessageId !== undefined && (typeof clientMessageId !== "string" || clientMessageId.length < 1 || clientMessageId.length > 100)) return res.status(400).json({ message: "Invalid message ID" });
+
+    const replyToIdNumber = replyToId !== undefined && replyToId !== null ? Number(replyToId) : null;
+    if (replyToIdNumber !== null && (!Number.isSafeInteger(replyToIdNumber) || replyToIdNumber < 1)) return res.status(400).json({ message: "Invalid reply message ID" });
+
+    const [chatAccess] = await db.query<RowDataPacket[]>(
+      "SELECT chatId FROM chat_participants WHERE chatId = ? AND userId = ?",
+      [chatId, req.userId],
+    );
+    if (chatAccess.length === 0) return res.status(404).json({ message: "Chat not found" });
+
+    if (replyToIdNumber !== null) {
+      const [replyAccess] = await db.query<RowDataPacket[]>(
+        "SELECT m.id FROM messages m JOIN chat_participants cp ON cp.chatId = m.chatId AND cp.userId = ? WHERE m.id = ? AND m.chatId = ? AND m.deleted_at IS NULL",
+        [req.userId, replyToIdNumber, chatId],
+      );
+      if (replyAccess.length === 0) return res.status(400).json({ message: "Reply message not found" });
+    }
+
+    const encryptedText = encryptText(text);
+    const [msgResult] = await db.query<ResultSetHeader>(
+      `INSERT INTO messages (chatId, senderId, reply_to_id, text, client_message_id)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)`,
+      [chatId, req.userId, replyToIdNumber, encryptedText, clientMessageId || null],
+    );
+
+    const messageId = msgResult.insertId;
+    if (msgResult.affectedRows === 1) {
+      await db.query("UPDATE chats SET lastMessageAt = NOW(), lastMessageId = ? WHERE id = ?", [messageId, chatId]);
+    }
+
+    const [storedMessages] = await db.query<RowDataPacket[]>(
+      "SELECT text, createdAt, reply_to_id AS replyToId FROM messages WHERE id = ?",
+      [messageId],
+    );
+
+    const [sender] = await db.query<RowDataPacket[]>(
+      "SELECT id AS _id, name, avatar FROM users WHERE id = ?",
+      [req.userId],
+    );
+
+    let replyTo = null;
+    const storedReplyToId = storedMessages[0]?.replyToId;
+    if (storedReplyToId !== null && storedReplyToId !== undefined) {
+      const [replyRows] = await db.query<RowDataPacket[]>("SELECT m.id, m.text, u.name AS senderName FROM messages m JOIN users u ON u.id = m.senderId WHERE m.id = ?", [storedReplyToId]);
+      if (replyRows.length > 0) replyTo = { _id: replyRows[0].id, text: decryptText(replyRows[0].text), senderName: replyRows[0].senderName };
+    }
+
+    const formattedMessage = {
+      _id: messageId,
+      clientMessageId: clientMessageId || undefined,
+      chat: chatId,
+      text: decryptText(storedMessages[0].text),
+      sender: sender[0],
+      createdAt: storedMessages[0].createdAt,
+      replyTo,
+    };
+
+    return res.status(201).json(formattedMessage);
   } catch (error) {
     return next(error);
   }

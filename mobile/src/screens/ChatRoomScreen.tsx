@@ -1,7 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Keyboard, Platform, Image, Alert, Modal } from "react-native";
 import type { ViewToken } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { FriendRelationship, RootStackParamList, Message } from "../types";
 import { apiCall } from "../api/client";
@@ -42,7 +42,9 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const lastViewedMessageIdRef = useRef<string | null>(null);
   const lastViewedSentRef = useRef<string | null>(null);
   const keyboardVisibleRef = useRef(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const followStateBeforeKeyboardRef = useRef<boolean | null>(null);
+  const insets = useSafeAreaInsets();
   const sendingBodiesRef = useRef(new Set<string>());
   const { user } = useAuth();
   const [isFriend, setIsFriend] = useState(false);
@@ -107,8 +109,20 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   };
 
   useEffect(() => {
-    const showSubscription = Keyboard.addListener("keyboardDidShow", () => {
+    const handleKeyboardHide = () => {
+      keyboardVisibleRef.current = false;
+      setKeyboardVisible(false);
+      followStateBeforeKeyboardRef.current = null;
+    };
+    const handleKeyboardFrame = (height: number) => {
+      if (height <= 0) {
+        handleKeyboardHide();
+        return;
+      }
+
       keyboardVisibleRef.current = true;
+      setKeyboardVisible(true);
+
       if (followStateBeforeKeyboardRef.current !== null) {
         shouldFollowLatestRef.current = followStateBeforeKeyboardRef.current;
         followStateBeforeKeyboardRef.current = null;
@@ -116,19 +130,34 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
 
       if (shouldFollowLatestRef.current) {
         setShowScrollToBottom(false);
-        requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
       } else {
         setShowScrollToBottom(true);
       }
-    });
-    const hideSubscription = Keyboard.addListener("keyboardDidHide", () => {
-      keyboardVisibleRef.current = false;
-      followStateBeforeKeyboardRef.current = null;
-    });
+    };
+
+    const subscriptions = Platform.OS === "ios"
+      ? [
+        Keyboard.addListener("keyboardWillShow", (event) => {
+          Keyboard.scheduleLayoutAnimation(event);
+          handleKeyboardFrame(event.endCoordinates.height);
+        }),
+        Keyboard.addListener("keyboardWillChangeFrame", (event) => {
+          Keyboard.scheduleLayoutAnimation(event);
+          handleKeyboardFrame(event.endCoordinates.height);
+        }),
+        Keyboard.addListener("keyboardWillHide", (event) => {
+          Keyboard.scheduleLayoutAnimation(event);
+          handleKeyboardHide();
+        }),
+        Keyboard.addListener("keyboardDidHide", handleKeyboardHide),
+      ]
+      : [
+        Keyboard.addListener("keyboardDidShow", (event) => handleKeyboardFrame(event.endCoordinates.height)),
+        Keyboard.addListener("keyboardDidHide", handleKeyboardHide),
+      ];
 
     return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
+      subscriptions.forEach((subscription) => subscription.remove());
     };
   }, []);
 
@@ -165,10 +194,13 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
       return;
     }
 
-    if (shouldFollowLatestRef.current) {
-      requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
-    }
   }, [messages, lastViewedMessageId, firstUnreadMessageId, readStateLoaded]);
+
+  useLayoutEffect(() => {
+    if (initialPositionedRef.current && shouldFollowLatestRef.current) {
+      listRef.current?.scrollToEnd({ animated: false });
+    }
+  }, [messages]);
 
   const dedupeMessages = (items: Message[]): Message[] => {
     return mergeMessages([], items);
@@ -421,7 +453,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
   const activePinnedIndex = activePinnedMessage ? pinnedMessages.findIndex((message) => String(message._id) === String(activePinnedMessage._id)) : -1;
 
   return (
-    <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+    <SafeAreaView style={styles.screen} edges={["top"]}>
       <KeyboardAvoidingView
         style={styles.wrapper}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -440,9 +472,17 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
           <TouchableOpacity onPress={() => { const previous = activePinnedIndex > 0 ? String(pinnedMessages[activePinnedIndex - 1]._id) : null; togglePin(activePinnedMessage); setActivePinnedId(previous); }} style={styles.dismissPin} accessibilityLabel="Unpin message"><Text style={styles.dismissPinText}>X</Text></TouchableOpacity>
         </View>}
 
-        <View style={styles.messageListContainer}>
+        <View
+          style={styles.messageListContainer}
+          onLayout={() => {
+            if (keyboardVisibleRef.current && shouldFollowLatestRef.current) {
+              requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+            }
+          }}
+        >
           <FlatList
             ref={listRef}
+            style={styles.messageList}
             contentContainerStyle={styles.listContent}
             data={messages}
             onViewableItemsChanged={onViewableItemsChanged}
@@ -483,12 +523,12 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
                     <Text style={styles.unreadDividerText}>Unread Messages</Text>
                     <View style={styles.unreadDividerLine} />
                   </View>}
-                  <TouchableOpacity onLongPress={() => item.status !== "pending" && item.status !== "failed" && setSelectedMessage(item)} delayLongPress={500} style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble, item.pinned && styles.pinnedBubble]}>
-                    {item.replyTo && <View style={styles.replyQuote}><Text style={styles.replyQuoteName}>{item.replyTo.senderName}</Text><Text style={styles.replyQuoteText} numberOfLines={1}>{item.replyTo.text}</Text></View>}
+                  <TouchableOpacity onLongPress={() => item.status !== "pending" && item.status !== "failed" && setSelectedMessage(item)} delayLongPress={500} activeOpacity={1} style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble, item.pinned && styles.pinnedBubble]}>
+                    {item.replyTo && <View style={[styles.replyQuote, isMe ? styles.myReplyQuote : styles.otherReplyQuote]}><Text style={[styles.replyQuoteName, isMe ? styles.myReplyQuoteName : styles.otherReplyQuoteName]}>{item.replyTo.senderName}</Text><Text style={[styles.replyQuoteText, isMe ? styles.myReplyQuoteText : styles.otherReplyQuoteText]} numberOfLines={1}>{item.replyTo.text}</Text></View>}
                     <Text style={isMe ? styles.myText : styles.otherText}>{item.displayText ?? item.text}</Text>
                     {item.pinned && <Text style={isMe ? styles.pinMyText : styles.pinText}>Pinned</Text>}
                     {isMe && item.status === "pending" && <Text style={styles.messageStatus}>◷ Sending</Text>}
-                    {isMe && item.status === "sent" && <Text style={styles.messageStatus}>✓✓</Text>}
+                    {isMe && item.status === "sent" && <Text style={styles.messageStatus}>✓</Text>}
                     {isMe && item.status === "failed" && <TouchableOpacity onPress={() => sendMessage(item.text, item.clientMessageId, item.replyTo ? ({ _id: item.replyTo._id, text: item.replyTo.text, sender: { _id: "", name: item.replyTo.senderName, avatar: "" } } as Message) : null, false)} accessibilityRole="button"><Text style={styles.retryText}>Failed · Retry</Text></TouchableOpacity>}
                   </TouchableOpacity>
                 </View>
@@ -510,7 +550,7 @@ export const ChatRoomScreen: React.FC<Props> = ({ route, navigation }) => {
         </View>
 
         {replyTo && <View style={styles.replyComposer}><View style={styles.replyComposerBar} /><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>Replying to {replyTo.sender?.name || replyTo.replyTo?.senderName || "message"}</Text><Text style={styles.replyComposerText} numberOfLines={1}>{replyTo.displayText ?? replyTo.text}</Text></View><TouchableOpacity onPress={() => setReplyTo(null)}><Text style={styles.dismissPinText}>X</Text></TouchableOpacity></View>}
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, { paddingBottom: keyboardVisible ? 0 : Math.max(12, insets.bottom) }]}>
           <TextInput
             style={styles.input}
             placeholder="Type message..."
@@ -571,11 +611,11 @@ const styles = StyleSheet.create({
   },
   headerAvatar: { width: 38, height: 38, borderRadius: 19, marginRight: 10 },
   partnerLabel: { color: AppColors.buttonInner, fontSize: 11, fontWeight: "700", marginTop: 2 },
-  pinnedBanner: { flexDirection: "row", alignItems: "center", marginHorizontal: 10, marginTop: 8, borderRadius: 16, backgroundColor: "rgba(65,48,76,0.92)", minHeight: 76, overflow: "hidden" },
+  pinnedBanner: { flexDirection: "row", alignItems: "center", marginHorizontal: 10, marginTop: 8, borderRadius: 16, backgroundColor: AppColors.backgroundDeep, minHeight: 76, overflow: "hidden" },
   pinnedContent: { flex: 1, flexDirection: "row", alignItems: "center", minHeight: 76 },
-  pinAccent: { width: 6, alignSelf: "stretch", backgroundColor: AppColors.buttonInner, marginRight: 14 },
+  pinAccent: { width: 6, alignSelf: "stretch", backgroundColor: AppColors.buttonOuter, marginRight: 14 },
   pinnedCopy: { flex: 1, paddingVertical: 11 },
-  pinnedTitle: { color: "#a9baff", fontSize: 18, fontWeight: "700" },
+  pinnedTitle: { color: AppColors.white, fontSize: 18, fontWeight: "700" },
   pinnedPreview: { color: "rgba(255,255,255,0.7)", fontSize: 14, marginTop: 4 },
   dismissPin: { width: 48, alignItems: "center", justifyContent: "center", alignSelf: "stretch" },
   dismissPinText: { color: "rgba(255,255,255,0.65)", fontSize: 28, fontWeight: "300" },
@@ -583,9 +623,13 @@ const styles = StyleSheet.create({
   unreadDividerLine: { flex: 1, height: 1, backgroundColor: "rgba(20,42,68,0.2)" },
   unreadDividerText: { color: AppColors.buttonInner, fontSize: 12, fontWeight: "700", paddingHorizontal: 10 },
   listContent: {
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 0,
   },
   messageListContainer: {
+    flex: 1,
+  },
+  messageList: {
     flex: 1,
   },
   scrollToBottomButton: {
@@ -606,34 +650,54 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   bubble: {
-    padding: 10,
-    borderRadius: 14,
-    marginVertical: 4,
-    marginHorizontal: 10,
-    maxWidth: "75%",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 18,
+    marginTop: 4,
+    marginBottom: 0,
+    marginHorizontal: 12,
+    maxWidth: "82%",
+    borderWidth: 1,
   },
   myBubble: {
     alignSelf: "flex-end",
-    backgroundColor: AppColors.buttonInner,
+    backgroundColor: AppColors.bubbleMine,
+    borderColor: "rgba(20,42,68,0.14)",
+    borderBottomRightRadius: 5,
+    elevation: 1,
   },
   otherBubble: {
     alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.8)",
+    backgroundColor: AppColors.bubbleOther,
+    borderColor: "rgba(20,42,68,0.08)",
+    borderBottomLeftRadius: 5,
   },
   myText: {
     color: AppColors.white,
+    fontSize: 15,
+    lineHeight: 22,
+    flexShrink: 1,
   },
   otherText: {
     color: AppColors.text,
+    fontSize: 15,
+    lineHeight: 22,
+    flexShrink: 1,
   },
   pinnedBubble: { borderWidth: 2, borderColor: AppColors.buttonInner },
   pinText: { color: AppColors.buttonInner, fontSize: 10, marginTop: 4, fontWeight: "700" },
   pinMyText: { color: AppColors.white, fontSize: 10, marginTop: 4, fontWeight: "700" },
   messageStatus: { color: "rgba(255,255,255,0.7)", fontSize: 10, marginTop: 4, alignSelf: "flex-end" },
   retryText: { color: "#ffd6d2", fontSize: 11, marginTop: 4, fontWeight: "700", alignSelf: "flex-end" },
-  replyQuote: { borderLeftWidth: 3, borderLeftColor: AppColors.buttonInner, paddingLeft: 8, marginBottom: 6, maxWidth: 220 },
-  replyQuoteName: { color: AppColors.buttonInner, fontSize: 11, fontWeight: "700" },
-  replyQuoteText: { color: "rgba(255,255,255,0.7)", fontSize: 11, marginTop: 2 },
+  replyQuote: { borderLeftWidth: 3, paddingLeft: 8, marginBottom: 7, maxWidth: 240 },
+  myReplyQuote: { borderLeftColor: AppColors.buttonOuter },
+  otherReplyQuote: { borderLeftColor: AppColors.buttonInner },
+  replyQuoteName: { fontSize: 11, fontWeight: "700" },
+  myReplyQuoteName: { color: AppColors.whiteSoft },
+  otherReplyQuoteName: { color: AppColors.buttonInner },
+  replyQuoteText: { fontSize: 12, marginTop: 2, lineHeight: 17 },
+  myReplyQuoteText: { color: "rgba(255,255,255,0.76)" },
+  otherReplyQuoteText: { color: AppColors.textMuted },
   replyComposer: { flexDirection: "row", alignItems: "center", marginHorizontal: 12, marginBottom: 4, padding: 8, borderRadius: 10, backgroundColor: AppColors.whiteSoft },
   replyComposerBar: { width: 4, alignSelf: "stretch", backgroundColor: AppColors.buttonInner, borderRadius: 2, marginRight: 8 },
   replyComposerCopy: { flex: 1 },
@@ -657,7 +721,10 @@ const styles = StyleSheet.create({
   menuCancelText: { color: AppColors.textMuted, fontSize: 16, fontWeight: "700" },
   inputContainer: {
     flexDirection: "row",
-    padding: 12,
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingTop: 0,
+    paddingBottom: 12,
     borderTopWidth: 0,
     backgroundColor: "rgba(20,42,68,0.05)",
   },

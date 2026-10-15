@@ -2,7 +2,7 @@ import crypto from "crypto";
 import dotenv from "dotenv";
 import path from "path";
 
-const envPath = process.env.ENV_PATH || path.resolve(process.cwd(), ".env");
+const envPath = process.env.ENV_PATH || path.resolve(__dirname, "../../.env");
 dotenv.config({ path: envPath });
 
 const RAW_KEY = process.env.ENCRYPTION_KEY;

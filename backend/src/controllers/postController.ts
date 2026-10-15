@@ -20,7 +20,7 @@ export async function getPosts(req: AuthRequest, res: Response, next: NextFuncti
   try {
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT p.id, p.user_id, p.body, p.image_url, p.image_urls, p.created_at, p.updated_at,
-              u.name, u.email, u.avatar,
+              u.name, u.avatar,
               (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id) AS like_count,
               EXISTS(SELECT 1 FROM post_likes me WHERE me.post_id = p.id AND me.user_id = ?) AS liked_by_me,
               (SELECT COUNT(*) FROM post_comments pc WHERE pc.post_id = p.id) AS comment_count
@@ -36,7 +36,7 @@ export async function getPosts(req: AuthRequest, res: Response, next: NextFuncti
       imageUrls: row.image_urls ? JSON.parse(row.image_urls) : row.image_url ? [row.image_url] : [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      author: { _id: row.user_id, name: row.name, email: row.email, avatar: row.avatar },
+      author: { _id: row.user_id, name: row.name, avatar: row.avatar },
       likeCount: Number(row.like_count || 0),
       likedByMe: Boolean(row.liked_by_me),
       commentCount: Number(row.comment_count || 0),
@@ -52,7 +52,7 @@ export async function getPost(req: AuthRequest, res: Response, next: NextFunctio
 
     const [rows] = await db.query<RowDataPacket[]>(
       `SELECT p.id, p.user_id, p.body, p.image_url, p.image_urls, p.created_at, p.updated_at,
-              u.name, u.email, u.avatar,
+              u.name, u.avatar,
               (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id) AS like_count,
               EXISTS(SELECT 1 FROM post_likes me WHERE me.post_id = p.id AND me.user_id = ?) AS liked_by_me,
               (SELECT COUNT(*) FROM post_comments pc WHERE pc.post_id = p.id) AS comment_count
@@ -71,7 +71,7 @@ export async function getPost(req: AuthRequest, res: Response, next: NextFunctio
       imageUrls: row.image_urls ? JSON.parse(row.image_urls) : row.image_url ? [row.image_url] : [],
       createdAt: row.created_at,
       updatedAt: row.updated_at,
-      author: { _id: row.user_id, name: row.name, email: row.email, avatar: row.avatar },
+      author: { _id: row.user_id, name: row.name, avatar: row.avatar },
       likeCount: Number(row.like_count || 0),
       likedByMe: Boolean(row.liked_by_me),
       commentCount: Number(row.comment_count || 0),

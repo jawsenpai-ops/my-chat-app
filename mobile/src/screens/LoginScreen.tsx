@@ -5,6 +5,7 @@ import { RootStackParamList, User } from "../types";
 import { apiCall } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { AppColors } from "../theme/colors";
+import { PixelHourglassLoader } from "../components/PixelHourglassLoader";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 
@@ -85,6 +86,11 @@ export const LoginScreen: React.FC<Props> = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </View>
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <PixelHourglassLoader label="SIGNING IN" />
+        </View>
+      )}
     </View>
   );
 };
@@ -96,6 +102,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 0,
     backgroundColor: AppColors.background,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(220,234,247,0.52)",
   },
   card: {
     width: "100%",

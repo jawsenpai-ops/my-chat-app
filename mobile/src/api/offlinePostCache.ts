@@ -5,6 +5,26 @@ const postsKey = "post-feed-cache:v1";
 const postKey = (postId: string | number) => `post-cache:v1:${encodeURIComponent(String(postId))}`;
 const commentsKey = (postId: string | number) => `post-comments-cache:v1:${encodeURIComponent(String(postId))}`;
 
+const isInlineImage = (value: string | null | undefined): boolean =>
+  typeof value === "string" && value.startsWith("data:image/");
+
+function withoutInlineImages(post: Post): Post {
+  return {
+    ...post,
+    imageUrl: isInlineImage(post.imageUrl) ? null : post.imageUrl,
+    imageUrls: post.imageUrls?.filter((imageUrl) => !isInlineImage(imageUrl)),
+    author: {
+      ...post.author,
+      avatar: isInlineImage(post.author.avatar) ? "" : post.author.avatar,
+    },
+  };
+}
+
+function isStorageFull(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /SQLITE_FULL|database or disk is full/i.test(message);
+}
+
 async function readJson<T>(key: string): Promise<T | null> {
   try {
     const value = await AsyncStorage.getItem(key);
@@ -21,10 +41,21 @@ export async function readCachedPosts(): Promise<Post[]> {
 }
 
 export async function saveCachedPosts(posts: Post[]) {
+  const serializedPosts = JSON.stringify(posts.slice(0, 200).map(withoutInlineImages));
   try {
-    await AsyncStorage.setItem(postsKey, JSON.stringify(posts.slice(0, 200)));
+    await AsyncStorage.setItem(postsKey, serializedPosts);
   } catch (error) {
-    console.warn("Unable to save offline post feed", error);
+    if (!isStorageFull(error)) {
+      console.warn("Unable to save offline post feed", error);
+      return;
+    }
+
+    try {
+      await AsyncStorage.removeItem(postsKey);
+      await AsyncStorage.setItem(postsKey, serializedPosts);
+    } catch (retryError) {
+      console.warn("Unable to save offline post feed", retryError);
+    }
   }
 }
 

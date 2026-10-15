@@ -3,6 +3,7 @@ import { protectRoute } from "../middleware/auth";
 import { addComment, createPost, deleteComment, deletePost, getComments, getPost, getPosts, toggleLike, updatePost } from "../controllers/postController";
 
 const router = Router();
+
 router.use(protectRoute);
 router.get("/", getPosts);
 router.get("/:postId", getPost);

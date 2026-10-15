@@ -14,6 +14,11 @@ import { readCachedChats, saveCachedChats } from "../api/offlineChatCache";
 
 type Props = NativeStackScreenProps<RootStackParamList, "ChatList">;
 
+const sortChats = (chats: Chat[]) => [...chats].sort((first, second) => {
+  if (!!first.pinned !== !!second.pinned) return first.pinned ? -1 : 1;
+  return new Date(second.lastMessageAt).getTime() - new Date(first.lastMessageAt).getTime();
+});
+
 type ChatListItemProps = {
   item: Chat;
   onlineUserIds: Set<string>;
@@ -69,7 +74,7 @@ const ChatListItem: React.FC<ChatListItemProps> = ({ item, onlineUserIds, onOpen
 
   return (
     <Pressable
-      style={{ borderRadius: 16, overflow: "hidden" }}
+      style={{ overflow: "hidden" }}
       onPressIn={(event) => animatePress(true, event)}
       onPressOut={() => animatePress(false)}
       onPress={() => onOpenChat(item, chatId)}
@@ -87,7 +92,7 @@ const ChatListItem: React.FC<ChatListItemProps> = ({ item, onlineUserIds, onOpen
           size={42}
           online={onlineUserIds.has(String(item.participant?._id))}
         />
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, marginLeft: 10 }}>
           <Text style={styles.name}>{item.participant?.name}</Text>
           <Text style={styles.lastMsg} numberOfLines={1}>{item.muted ? "Muted" : item.lastMessage?.text || "No messages"}</Text>
         </View>
@@ -133,7 +138,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
     const currentUserId = String(user?._id || (user as any)?.id || "");
     try {
       const cachedChats = currentUserId ? await readCachedChats(currentUserId) : [];
-      if (cachedChats.length > 0) setChats(cachedChats);
+      if (cachedChats.length > 0) setChats(sortChats(cachedChats));
 
       const [chatData, userData, requestData, incomingFriends, friendData] = await Promise.all([
         apiCall<Chat[]>("/chats"),
@@ -142,8 +147,9 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         apiCall<IncomingFriendRequest[]>("/friends/requests/incoming"),
         apiCall<User[]>("/friends"),
       ]);
-      setChats(chatData);
-      if (currentUserId) void saveCachedChats(currentUserId, chatData);
+      const sortedChats = sortChats(chatData);
+      setChats(sortedChats);
+      if (currentUserId) void saveCachedChats(currentUserId, sortedChats);
       setRequests(requestData);
       setFriendRequests(incomingFriends);
 
@@ -181,14 +187,15 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
     const handleNewMessage = (message: { _id: string | number; chat: string | number; text: string; createdAt: string; sender: { _id: string | number } }) => {
       const senderId = message.sender?._id;
       const currentUserId = user?._id || (user as any)?.id;
-      setChats((current) => current.map((chat) => {
+      setChats((current) => sortChats(current.map((chat) => {
         if (String(chat._id) !== String(message.chat)) return chat;
         return {
           ...chat,
+          lastMessageAt: message.createdAt,
           lastMessage: { _id: message._id, text: message.text, createdAt: message.createdAt },
           unreadCount: String(senderId) === String(currentUserId) ? chat.unreadCount : (chat.unreadCount || 0) + 1,
         };
-      }));
+      })));
     };
     const handleNotification = () => { loadData(); };
     const handleFriendEvent = () => { loadData(); };
@@ -250,7 +257,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
     try {
       await apiCall(`/chats/${chatId}/action`, { method: "POST", body: JSON.stringify({ action }) });
       if (action === "delete") setChats((current) => current.filter((chat) => String(chat._id) !== String(chatId)));
-      else setChats((current) => current.map((chat) => String(chat._id) === String(chatId) ? { ...chat, [action === "pin" ? "pinned" : "muted"]: !(action === "pin" ? chat.pinned : chat.muted) } : chat));
+      else setChats((current) => sortChats(current.map((chat) => String(chat._id) === String(chatId) ? { ...chat, [action === "pin" ? "pinned" : "muted"]: !(action === "pin" ? chat.pinned : chat.muted) } : chat)));
     } catch (error: any) { Alert.alert("Could not update chat", error.message); }
     setSelectedChat(null);
   };
@@ -270,7 +277,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
         <TextInput
           value={userSearch}
           onChangeText={setUserSearch}
-          placeholder="Search by name or Gmail"
+          placeholder="Search by name"
           placeholderTextColor="rgba(0, 0, 0, 0.4)"
           autoCapitalize="none"
           autoCorrect={false}
@@ -282,7 +289,7 @@ export const ChatListScreen: React.FC<Props> = ({ navigation }) => {
           contentContainerStyle={styles.userListContent}
           data={users.filter((item) => {
             const query = userSearch.trim().toLowerCase();
-            return !query || item.name.toLowerCase().includes(query) || item.email.toLowerCase().includes(query);
+            return !query || item.name.toLowerCase().includes(query);
           })}
           keyExtractor={(item, index) => {
             const key = item._id || (item as any).id;
@@ -366,17 +373,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   listContent: {
-    paddingTop: 8,
+    paddingTop: 0,
     paddingBottom: 6,
   },
   chatCard: {
     overflow: "hidden",
     flexDirection: "row",
     alignItems: "center",
-    padding: 12,
-    marginBottom: 8,
-    borderRadius: 16,
-    backgroundColor: "#000000",
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    marginBottom: 0,
+    borderRadius: 0,
+    backgroundColor: "transparent",
     borderWidth: 0,
   },
   ripple: {
@@ -384,17 +392,17 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.28)",
   },
   chatCardPressed: {
-    backgroundColor: "#1f1f1f",
+    backgroundColor: "rgba(0,0,0,0.05)",
   },
   avatar: { width: 42, height: 42, borderRadius: 21, marginRight: 10 },
   avatarLarge: { width: 42, height: 42, borderRadius: 21 },
   name: { 
     fontWeight: "700", 
-    color: "#FFFFFF",
+    color: AppColors.text,
     fontSize: 15 
   },
   lastMsg: { 
-    color: "#A0AEC0",
+    color: AppColors.textMuted,
     fontSize: 12, 
     marginTop: 4 
   },

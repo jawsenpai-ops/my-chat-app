@@ -4,6 +4,7 @@ import { clearPushToken, getProfile, getPublicProfile, getUsers, savePushToken, 
 import { userRateLimiter } from "../middleware/rateLimit";
 
 const router = Router();
+
 router.use(protectRoute, userRateLimiter);
 router.get("/", getUsers);
 router.get("/me", getProfile);
